@@ -28,9 +28,20 @@ Usage
 
 .. code-block:: python
 
-   import pyht
+   from datetime import datetime
+   from pathlib import Path
 
+   import pyaudio
 
+   from pyht import Client
+
+   client = Client(
+      user_id="<YOUR_USER_ID>",
+      api_key="<YOUR_API_KEY>",
+   )
+
+   for chunk in client.tts("Hello World!", voice="<YOUR_VOICE_URI>"):
+      # do something with the audio chunk
 
 
 .. |GHA tests| image:: https://github.com/playht/pyht/workflows/tests/badge.svg
