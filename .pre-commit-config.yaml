@@ -17,6 +17,7 @@ repos:
           - "--target-version=py310"
           - "--target-version=py311"
         types: [python]
+        exclude: ^pyht/protos
 
   - repo: https://github.com/adamchainz/blacken-docs
     rev: 1.16.0
@@ -26,6 +27,7 @@ repos:
           - "black==23.3.0"
         args:
           - "--line-length=120"
+        exclude: ^pyht/protos
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.4.0
@@ -70,8 +72,10 @@ repos:
       - tomli
     hooks:
       - id: codespell
+        exclude: ^pyht/protos
 
   - repo: https://github.com/RobertCraigie/pyright-python
     rev: v1.1.326
     hooks:
       - id: pyright
+        exclude: ^pyht/protos

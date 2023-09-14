@@ -57,7 +57,7 @@ line_profiler = ">=3.5.1"
 
 [tool.coverage.run]
 branch = true
-omit = ["tests/*"]
+omit = ["tests/*", "pyht/protos/*"]
 
 [tool.coverage.report]
 exclude_lines = [
