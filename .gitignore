@@ -247,7 +247,3 @@ pyht/*.html
 
 # Poetry
 poetry.toml
-
-# Project specific
-pyht/protos/*.py
-pyht/protos/*.pyi

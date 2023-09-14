@@ -24,7 +24,6 @@ packages = [{ include = "pyht" }]
 include = ["pyth/*.so", "pyth/*.pyd"]          # Compiled extensions
 
 [tool.poetry.build]
-script = "build.py"
 generate-setup-file = false
 
 [tool.poetry.scripts]
