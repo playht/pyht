@@ -1,7 +1,11 @@
+import os
 import subprocess
 
 
 def run_make():
+    # only run if Makefile exists
+    if not os.path.exists("Makefile"):
+        return
     try:
         subprocess.run(["make", "all"], check=True, text=True, capture_output=True)
     except subprocess.CalledProcessError as e:
