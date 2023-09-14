@@ -164,4 +164,4 @@ convention = "numpy"
 staticmethod-decorators = ["pydantic.validator", "pydantic.root_validator"]
 
 [tool.codespell]
-skip = 'poetry.lock,'
+skip = 'poetry.lock,./pyht/protos'
