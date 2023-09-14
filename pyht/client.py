@@ -63,6 +63,7 @@ class Client:
                 self._timer.cancel()
             refresh_in = (self._lease.expires - timedelta(minutes=5) - datetime.now()).total_seconds()
             self._timer = threading.Timer(refresh_in, self._refresh_lease)
+            self._timer.start()
 
     def tts(self, text: str, voice: str) -> Iterable[bytes]:
         self._refresh_lease()
