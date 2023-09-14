@@ -83,6 +83,10 @@ exclude_lines = [
 [tool.pyright]
 venvPath = "."
 venv = ".venv"
+ignore = [
+    "tests/*",
+    "pyht/protos/*.py",
+]
 
 [tool.ruff]
 target-version = 'py38'
@@ -116,6 +120,7 @@ exclude = [
     ".env",
     "venv",
     ".venv",
+    "pyht/protos/*.py",
 ]
 
 ignore = [
@@ -164,4 +169,4 @@ convention = "numpy"
 staticmethod-decorators = ["pydantic.validator", "pydantic.root_validator"]
 
 [tool.codespell]
-skip = 'poetry.lock,./pyht/protos'
+skip = 'poetry.lock,./pyht/protos/*.py'
