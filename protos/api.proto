@@ -67,7 +67,7 @@ enum Quality {
   
 // Audio formats.
 enum Format {
-  FORMAT_UNSPECIFIED = 0; // Default value, interpreted as FORMAT_MP3.
+  FORMAT_RAW = 0; // raw fp32 PCM samples
   FORMAT_MP3 = 1; // 128kbps MP3
   FORMAT_WAV = 2; // 16-bit (uint16) PCM
   FORMAT_OGG = 3; // 80kbps OGG Vorbis

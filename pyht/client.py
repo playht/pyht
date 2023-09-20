@@ -1,13 +1,54 @@
+import asyncio
+import concurrent.futures
 import json
+import queue
 import threading
+from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Iterable, Optional, Tuple
+from typing import AsyncGenerator, Iterable, Optional, Tuple
 
 import requests
 from grpc import Channel, insecure_channel, secure_channel, ssl_channel_credentials
 
 from .lease import Lease
 from .protos import api_pb2, api_pb2_grpc
+from .protos.api_pb2 import Format
+
+
+def threaded_sync_to_async(sync_gen, q):
+    try:
+        for item in sync_gen:
+            q.put(item)
+        q.put(StopIteration())
+    except Exception as e:
+        q.put(e)
+
+
+async def async_generator(sync_gen):
+    q = queue.Queue()
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        executor.submit(threaded_sync_to_async, sync_gen, q)
+
+        while True:
+            item = await asyncio.to_thread(q.get)
+
+            if isinstance(item, StopIteration):
+                return
+            elif isinstance(item, Exception):
+                raise item
+            else:
+                yield item
+
+
+@dataclass
+class TTSOptions:
+    voice: str
+    format: Format = Format.FORMAT_WAV
+    sample_rate: int = 24000
+    quality: str = "fast"
+    temperature: float = 0.5
+    top_p: float = 0.5
 
 
 class Client:
@@ -15,6 +56,7 @@ class Client:
         self,
         user_id: str,
         api_key: str,
+        auto_connect: bool = True,
         _api_url: str = "https://play.ht/api",
         _grpc_addr: Optional[str] = None,
         _insecure: bool = False,
@@ -31,6 +73,8 @@ class Client:
         self._rpc: Optional[Tuple[str, Channel]] = None
         self._lock = threading.Lock()
         self._timer: Optional[threading.Timer] = None
+        if auto_connect:
+            self._refresh_lease()
 
     def _get_lease(self) -> Lease:
         response = requests.post(f"{self._api_url}/v2/leases", headers=self._api_headers, timeout=10)
@@ -65,22 +109,36 @@ class Client:
             self._timer = threading.Timer(refresh_in, self._refresh_lease)
             self._timer.start()
 
-    def tts(self, text: str, voice: str) -> Iterable[bytes]:
+    def tts(self, text: str, options: TTSOptions) -> Iterable[bytes]:
         self._refresh_lease()
         assert self._lease is not None and self._rpc is not None, "No connection"
+
+        quality = options.quality.lower()
+        other = {}
+        if quality == "fast":
+            other["diffuser"] = False
+        else:
+            other["diffuser"] = True
+
+        # TODO: split text >350 chars into chunks on sentence boundaries
+
         params = api_pb2.TtsParams(
             text=[text],
-            voice=voice,
-            format=api_pb2.FORMAT_UNSPECIFIED,
-            temperature=0.5,
-            top_p=0.5,
-            other=json.dumps({"diffuser": True}),
+            voice=options.voice,
+            format=options.format,
+            temperature=options.temperature,
+            top_p=options.top_p,
+            sample_rate=options.sample_rate,
+            other=json.dumps(other),
         )
         request = api_pb2.TtsRequest(params=params, lease=self._lease.data)
         stub = api_pb2_grpc.TtsStub(self._rpc[1])
         response = stub.Tts(request)  # type: Iterable[api_pb2.TtsResponse]
         for item in response:
             yield item.data
+
+    def tts_async(self, text: str, options: TTSOptions) -> AsyncGenerator[bytes, None]:
+        return async_generator(self.tts(text, options))
 
     def close(self):
         if self._timer:

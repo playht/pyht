@@ -2,6 +2,6 @@
 __version__ = "0.0.0"
 
 
-from .client import Client
+from .client import Client, Format, TTSOptions
 
-__all__ = ["Client"]
+__all__ = ["Client", "Format", "TTSOptions"]

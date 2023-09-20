@@ -25,7 +25,7 @@ class Quality(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
 
 class Format(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = []
-    FORMAT_UNSPECIFIED: _ClassVar[Format]
+    FORMAT_RAW: _ClassVar[Format]
     FORMAT_MP3: _ClassVar[Format]
     FORMAT_WAV: _ClassVar[Format]
     FORMAT_OGG: _ClassVar[Format]
@@ -42,7 +42,7 @@ QUALITY_HIGH: Quality
 QUALITY_MEDIUM: Quality
 QUALITY_DRAFT: Quality
 QUALITY_LOW: Quality
-FORMAT_UNSPECIFIED: Format
+FORMAT_RAW: Format
 FORMAT_MP3: Format
 FORMAT_WAV: Format
 FORMAT_OGG: Format
