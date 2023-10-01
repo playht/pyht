@@ -42,33 +42,41 @@ async def async_generator(sync_gen):
 
 
 @dataclass
-class TTSOptions:
+class TTSOptions(object):
     voice: str
     format: Format = Format.FORMAT_WAV
     sample_rate: int = 24000
-    quality: str = "fast"
+    quality: str = "faster"
     temperature: float = 0.5
     top_p: float = 0.5
 
 
-class Client:
+class Client(object):
+    @dataclass
+    class AdvancedOptions(object):
+        api_url: str = "https://api.play.ht/api"
+        grpc_addr: Optional[str] = None
+        insecure: bool = False
+            
+
     def __init__(
         self,
         user_id: str,
         api_key: str,
         auto_connect: bool = True,
-        _api_url: str = "https://play.ht/api",
-        _grpc_addr: Optional[str] = None,
-        _insecure: bool = False,
+        advanced: Optional['Client.AdvancedOptions'] = None
     ):
         assert user_id, "user_id is required"
         assert api_key, "api_key is required"
 
+        if advanced is None:
+            advanced = Client.AdvancedOptions()
+
         auth_header = f"Bearer {api_key}" if not api_key.startswith("Bearer ") else api_key
-        self._api_url = _api_url
+        self._api_url = advanced.api_url
         self._api_headers = {"X-User-Id": user_id, "Authorization": auth_header}
-        self._grpc_addr = _grpc_addr
-        self._insecure = _insecure
+        self._grpc_addr = advanced.grpc_addr
+        self._insecure = advanced.insecure
         self._lease: Optional[Lease] = None
         self._rpc: Optional[Tuple[str, Channel]] = None
         self._lock = threading.Lock()
@@ -114,11 +122,6 @@ class Client:
         assert self._lease is not None and self._rpc is not None, "No connection"
 
         quality = options.quality.lower()
-        other = {}
-        if quality == "fast":
-            other["diffuser"] = False
-        else:
-            other["diffuser"] = True
 
         # TODO: split text >350 chars into chunks on sentence boundaries
 
@@ -126,10 +129,10 @@ class Client:
             text=[text],
             voice=options.voice,
             format=options.format,
+            quality=api_pb2.QUALITY_DRAFT if quality == 'faster' else api_pb2.QUALITY_MEDIUM,
             temperature=options.temperature,
             top_p=options.top_p,
             sample_rate=options.sample_rate,
-            other=json.dumps(other),
         )
         request = api_pb2.TtsRequest(params=params, lease=self._lease.data)
         stub = api_pb2_grpc.TtsStub(self._rpc[1])
