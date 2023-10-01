@@ -2,14 +2,14 @@
 
 ## Prereqs
 This demo depends on the following packages:
-```sh
+```
 numpy
 simpleaudio
 ```
 
 ## Usage
 
-```sh
+```
 $ python demo/main.py --help
 
 usage: PyHT Streaming Demo [-h] --user USER --key KEY [--voice VOICE] [--quality {fast,faster}] (--text TEXT [TEXT ...] | --interactive)
