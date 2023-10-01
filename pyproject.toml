@@ -121,6 +121,7 @@ exclude = [
     "venv",
     ".venv",
     "pyht/protos/*.py",
+    "demo",  # This is sample code, and not meant to build in the package.
 ]
 
 ignore = [
