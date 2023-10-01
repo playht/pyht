@@ -57,14 +57,13 @@ class Client(object):
         api_url: str = "https://api.play.ht/api"
         grpc_addr: Optional[str] = None
         insecure: bool = False
-            
 
     def __init__(
         self,
         user_id: str,
         api_key: str,
         auto_connect: bool = True,
-        advanced: Optional['Client.AdvancedOptions'] = None
+        advanced: Optional["Client.AdvancedOptions"] = None,
     ):
         assert user_id, "user_id is required"
         assert api_key, "api_key is required"
@@ -72,7 +71,9 @@ class Client(object):
         if advanced is None:
             advanced = Client.AdvancedOptions()
 
-        auth_header = f"Bearer {api_key}" if not api_key.startswith("Bearer ") else api_key
+        auth_header = (
+            f"Bearer {api_key}" if not api_key.startswith("Bearer ") else api_key
+        )
         self._api_url = advanced.api_url
         self._api_headers = {"X-User-Id": user_id, "Authorization": auth_header}
         self._grpc_addr = advanced.grpc_addr
@@ -85,19 +86,25 @@ class Client(object):
             self._refresh_lease()
 
     def _get_lease(self) -> Lease:
-        response = requests.post(f"{self._api_url}/v2/leases", headers=self._api_headers, timeout=10)
+        response = requests.post(
+            f"{self._api_url}/v2/leases", headers=self._api_headers, timeout=10
+        )
         response.raise_for_status()
 
         data = response.content
         lease = Lease(data)
 
-        assert lease.expires > datetime.now(), "Got an expired lease, is your system clock correct?"
+        assert (
+            lease.expires > datetime.now()
+        ), "Got an expired lease, is your system clock correct?"
 
         return lease
 
     def _refresh_lease(self):
         with self._lock:
-            if self._lease and self._lease.expires > datetime.now() + timedelta(minutes=5):
+            if self._lease and self._lease.expires > datetime.now() + timedelta(
+                minutes=5
+            ):
                 return
             self._lease = self._get_lease()
             grpc_addr = self._grpc_addr or self._lease.metadata["pigeon_url"]
@@ -113,7 +120,9 @@ class Client(object):
                 self._rpc = (grpc_addr, channel)
             if self._timer:
                 self._timer.cancel()
-            refresh_in = (self._lease.expires - timedelta(minutes=5) - datetime.now()).total_seconds()
+            refresh_in = (
+                self._lease.expires - timedelta(minutes=5) - datetime.now()
+            ).total_seconds()
             self._timer = threading.Timer(refresh_in, self._refresh_lease)
             self._timer.start()
 
@@ -129,7 +138,9 @@ class Client(object):
             text=[text],
             voice=options.voice,
             format=options.format,
-            quality=api_pb2.QUALITY_DRAFT if quality == 'faster' else api_pb2.QUALITY_MEDIUM,
+            quality=api_pb2.QUALITY_DRAFT
+            if quality == "faster"
+            else api_pb2.QUALITY_MEDIUM,
             temperature=options.temperature,
             top_p=options.top_p,
             sample_rate=options.sample_rate,
