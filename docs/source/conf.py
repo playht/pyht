@@ -13,10 +13,9 @@ from pathlib import Path
 
 import git
 
-sys.path.insert(0, str(Path("../..").absolute()))
-
-
 from pyht import __version__
+
+sys.path.insert(0, str(Path("../..").absolute()))
 
 git_repo = git.Repo(".", search_parent_directories=True)  # type: ignore[reportPrivateImportUsage]
 git_commit = git_repo.head.commit
@@ -42,7 +41,7 @@ extensions = [
     "sphinx_rtd_theme",
     "sphinx.ext.autodoc",
     "sphinx.ext.napoleon",
-    "sphinx.ext.linkcode",
+    # "sphinx.ext.linkcode",
     "sphinx_copybutton",
 ]
 
@@ -52,7 +51,7 @@ templates_path = ["_templates"]
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
-exclude_patterns = []
+exclude_patterns = ["demo"]
 
 smartquotes = False
 

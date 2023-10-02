@@ -1,6 +1,5 @@
 import asyncio
 import concurrent.futures
-import json
 import queue
 import threading
 from dataclasses import dataclass
@@ -31,7 +30,7 @@ async def async_generator(sync_gen):
         executor.submit(threaded_sync_to_async, sync_gen, q)
 
         while True:
-            item = await asyncio.to_thread(q.get)
+            item = await asyncio.to_thread(q.get)  # type: ignore[reportGeneralTypeIssues]
 
             if isinstance(item, StopIteration):
                 return
@@ -42,7 +41,7 @@ async def async_generator(sync_gen):
 
 
 @dataclass
-class TTSOptions(object):
+class TTSOptions:
     voice: str
     format: Format = Format.FORMAT_WAV
     sample_rate: int = 24000
@@ -51,9 +50,9 @@ class TTSOptions(object):
     top_p: float = 0.5
 
 
-class Client(object):
+class Client:
     @dataclass
-    class AdvancedOptions(object):
+    class AdvancedOptions:
         api_url: str = "https://api.play.ht/api"
         grpc_addr: Optional[str] = None
         insecure: bool = False
@@ -71,11 +70,12 @@ class Client(object):
         if advanced is None:
             advanced = Client.AdvancedOptions()
 
-        auth_header = (
-            f"Bearer {api_key}" if not api_key.startswith("Bearer ") else api_key
-        )
+        auth_header = f"Bearer {api_key}" if not api_key.startswith(
+            "Bearer ") else api_key
         self._api_url = advanced.api_url
-        self._api_headers = {"X-User-Id": user_id, "Authorization": auth_header}
+        self._api_headers = {
+            "X-User-Id": user_id,
+            "Authorization": auth_header}
         self._grpc_addr = advanced.grpc_addr
         self._insecure = advanced.insecure
         self._lease: Optional[Lease] = None
@@ -87,24 +87,22 @@ class Client(object):
 
     def _get_lease(self) -> Lease:
         response = requests.post(
-            f"{self._api_url}/v2/leases", headers=self._api_headers, timeout=10
-        )
+            f"{self._api_url}/v2/leases",
+            headers=self._api_headers,
+            timeout=10)
         response.raise_for_status()
 
         data = response.content
         lease = Lease(data)
 
-        assert (
-            lease.expires > datetime.now()
+        assert lease.expires > datetime.now(
         ), "Got an expired lease, is your system clock correct?"
 
         return lease
 
     def _refresh_lease(self):
         with self._lock:
-            if self._lease and self._lease.expires > datetime.now() + timedelta(
-                minutes=5
-            ):
+            if self._lease and self._lease.expires > datetime.now() + timedelta(minutes=5):
                 return
             self._lease = self._get_lease()
             grpc_addr = self._grpc_addr or self._lease.metadata["pigeon_url"]
@@ -121,8 +119,10 @@ class Client(object):
             if self._timer:
                 self._timer.cancel()
             refresh_in = (
-                self._lease.expires - timedelta(minutes=5) - datetime.now()
-            ).total_seconds()
+                self._lease.expires -
+                timedelta(
+                    minutes=5) -
+                datetime.now()).total_seconds()
             self._timer = threading.Timer(refresh_in, self._refresh_lease)
             self._timer.start()
 
@@ -138,9 +138,7 @@ class Client(object):
             text=[text],
             voice=options.voice,
             format=options.format,
-            quality=api_pb2.QUALITY_DRAFT
-            if quality == "faster"
-            else api_pb2.QUALITY_MEDIUM,
+            quality=api_pb2.QUALITY_DRAFT if quality == "faster" else api_pb2.QUALITY_MEDIUM,
             temperature=options.temperature,
             top_p=options.top_p,
             sample_rate=options.sample_rate,
@@ -151,7 +149,8 @@ class Client(object):
         for item in response:
             yield item.data
 
-    def tts_async(self, text: str, options: TTSOptions) -> AsyncGenerator[bytes, None]:
+    def tts_async(self, text: str,
+                  options: TTSOptions) -> AsyncGenerator[bytes, None]:
         return async_generator(self.tts(text, options))
 
     def close(self):

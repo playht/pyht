@@ -17,14 +17,16 @@ class StreamingClient(client.Client):
         api_key: str,
         buffer_byte_size: int = 10485760,
     ):
-        advanced = client.Client.AdvancedOptions(grpc_addr="prod.turbo.play.ht:443")
+        advanced = client.Client.AdvancedOptions(
+            grpc_addr="prod.turbo.play.ht:443")
         super().__init__(user_id, api_key, advanced=advanced)
         self._buff_size = buffer_byte_size
 
     def play(self, text: str, voice: str, quality: str):
         options = client.TTSOptions(
-            voice=voice, format=api_pb2.FORMAT_WAV, quality=quality
-        )
+            voice=voice,
+            format=api_pb2.FORMAT_WAV,
+            quality=quality)
         ptr = 0
         start_time = time.time()
         audio = None
@@ -32,14 +34,17 @@ class StreamingClient(client.Client):
         for i, chunk in enumerate(self.tts(text, options)):
             if i == 0:
                 start_time = time.time()
-                continue  # Drop the first response, we dont' want a header.
+                continue  # Drop the first response, we don't want a header.
             elif i == 1:
-                print("First audio byte received in:", time.time() - start_time)
+                print(
+                    "First audio byte received in:",
+                    time.time() - start_time)
             for sample in np.frombuffer(chunk, np.float16):
                 buffer[ptr] = sample
                 ptr += 1
             if i == 2:
-                # Give a 1 sample worth of breathing room before starting playback
+                # Give a 1 sample worth of breathing room before starting
+                # playback
                 audio = sa.play_buffer(buffer, 1, 2, 24000)
         approx_run_time = ptr / 24000
         time.sleep(approx_run_time - time.time() + start_time)
@@ -85,11 +90,17 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser("PyHT Streaming Demo")
 
     parser.add_argument(
-        "--user", "-u", type=str, required=True, help="Your Play.ht User ID."
-    )
+        "--user",
+        "-u",
+        type=str,
+        required=True,
+        help="Your Play.ht User ID.")
     parser.add_argument(
-        "--key", "-k", type=str, required=True, help="Your Play.ht API key."
-    )
+        "--key",
+        "-k",
+        type=str,
+        required=True,
+        help="Your Play.ht API key.")
     parser.add_argument(
         "--voice",
         "-v",
