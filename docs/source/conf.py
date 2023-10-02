@@ -13,10 +13,9 @@ from pathlib import Path
 
 import git
 
-sys.path.insert(0, str(Path("../..").absolute()))
-
-
 from pyht import __version__
+
+sys.path.insert(0, str(Path("../..").absolute()))
 
 git_repo = git.Repo(".", search_parent_directories=True)  # type: ignore[reportPrivateImportUsage]
 git_commit = git_repo.head.commit

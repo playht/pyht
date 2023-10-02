@@ -1,7 +1,5 @@
 import pytest
 
-import pyht
-
 
 @pytest.fixture
 def data():

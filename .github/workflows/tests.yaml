@@ -57,6 +57,11 @@ jobs:
       - name: Install library
         run: poetry install --no-interaction
 
+      - name: Install demo dependencies
+        run: |
+          cd demo
+          python -m pip install -r requirements.txt
+
       - uses: actions/cache@v3
         with:
           path: ~/.cache/pre-commit/
