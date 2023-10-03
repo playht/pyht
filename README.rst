@@ -49,7 +49,7 @@ For a more detailed example with command-line arguments and interactive mode, re
 
 Command-Line Demo
 -----------------
-You can run the provided `demo <./demo/>`_ from the command line.
+You can run the provided `demo <https://github.com/playht/pyht/tree/master/demo/>`_ from the command line.
 
 **Note:** This demo depends on the following packages:
 
