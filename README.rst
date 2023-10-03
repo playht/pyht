@@ -1,58 +1,90 @@
-.. image:: assets/logo_200w.png
 
-|Python compat| |PyPi| |GHA tests| |Codecov report| |readthedocs|
 
-.. inclusion-marker-do-not-remove
-
-pyht
-==============
-
-pyht is a
-
+PlayHT API SDK
+========
+**pyht** is a Python SDK for the `PlayHT's Text-to-Speech API <https://play.ht/>`_. With **pyht**, you can easily convert text into high-quality audio streams in humanlike voice.
 
 Features
-========
+--------
+- Stream text-to-speech in real-time.
+- Use prebuilt voices or custom voice clones.
+- Supports WAV, MP3, PCM, Mulaw, FLAC, and OGG audio formats.
+
+Requirements
+------------
+- Python 3.8+
+- `numpy`
+- `simpleaudio`
 
 Installation
-============
-
-playht requires Python ``>=3.8`` and can be installed via:
+------------
+You can install the **pyht** SDK using pip:
 
 .. code-block:: bash
 
-   python -m pip install pyht
-
+    pip install pyht
 
 Usage
-=====
+-----
+You can use the **pyht** SDK by creating a `Client` instance and calling its `tts` method. Here's a simple example:
 
 .. code-block:: python
 
-   from datetime import datetime
-   from pathlib import Path
+      from pyht import Client
+      from dotenv import load_dotenv
+      from pyht.client import TTSOptions
+      import os
+      load_dotenv()
 
-   import pyaudio
+      client = Client(
+         user_id=os.getenv("PLAY_HT_USER_ID"),
+         api_key=os.getenv("PLAY_HT_API_KEY"),
+      )
+      options = TTSOptions(voice="s3://voice-cloning-zero-shot/d9ff78ba-d016-47f6-b0ef-dd630f59414e/female-cs/manifest.json")
+      for chunk in client.tts("Can you tell me your account email or, ah your phone number?", options):
+         # do something with the audio chunk
+         print(type(chunk))
 
-   from pyht import Client
+For a more detailed example with command-line arguments and interactive mode, refer to the provided demo.
 
-   client = Client(
-      user_id="<YOUR_USER_ID>",
-      api_key="<YOUR_API_KEY>",
-   )
+Command-Line Demo
+-----------------
+You can run the provided `demo <./demo/>`_ from the command line.
 
-   for chunk in client.tts("Hello World!", voice="<YOUR_VOICE_URI>"):
-      # do something with the audio chunk
+**Note:** This demo depends on the following packages:
+
+.. code-block:: bash
+
+    pip install numpy simpleaudio
+
+..
+
+.. code-block:: bash
+
+    python demo/main.py --user YOUR_USER_ID --key YOUR_API_KEY --text "Hello from Play!"
 
 
-.. |GHA tests| image:: https://github.com/playht/pyht/workflows/tests/badge.svg
-   :target: https://github.com/playht/pyht/actions?query=workflow%3Atests
-   :alt: GHA Status
-.. |Codecov report| image:: https://codecov.io/github/playht/pyht/graph/badge.svg?token=YQALN60PXB
-   :target: https://codecov.io/github/playht/pyht
-   :alt: Coverage
-.. |readthedocs| image:: https://readthedocs.org/projects/pyht/badge/?version=latest
-        :target: https://pyht.readthedocs.io/en/latest/?badge=latest
-        :alt: Documentation Status
-.. |Python compat| image:: https://img.shields.io/badge/>=python-3.8-blue.svg
-.. |PyPi| image:: https://img.shields.io/pypi/v/pyht.svg
-        :target: https://pypi.python.org/pypi/pyht
+Alternatively, you can run the demo in interactive mode:
+
+.. code-block:: bash
+
+    python demo/main.py --user YOUR_USER_ID --key YOUR_API_KEY --interactive
+
+In interactive mode, you can input text lines to generate and play audio on-the-fly. An empty line will exit the interactive session.
+
+Get an API Key
+--------------
+To get started with the **pyht** SDK, you'll need your API Secret Key and User ID. Follow these steps to obtain them:
+
+1. **Access the API Page**:
+   Navigate to the `API Access page <https://play.ht/studio/api-access>`_.
+
+2. **Generate Your API Secret Key**:
+   - Click the "Generate Secret Key" button under the "Secret Key" section.
+   - Your API Secret Key will be displayed. Ensure you copy it and store it securely.
+
+5. **Locate Your User ID**:
+   Find and copy your User ID, which can be found on the same page under the "User ID" section.
+
+.. warning::
+   **Keep your API Secret Key confidential**. It's crucial not to share it with anyone or include it in publicly accessible code repositories.
