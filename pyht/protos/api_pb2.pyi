@@ -17,11 +17,11 @@ class Code(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
 class Quality(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = []
     QUALITY_UNSPECIFIED: _ClassVar[Quality]
-    QUALITY_PREMIUM: _ClassVar[Quality]
-    QUALITY_HIGH: _ClassVar[Quality]
-    QUALITY_MEDIUM: _ClassVar[Quality]
-    QUALITY_DRAFT: _ClassVar[Quality]
     QUALITY_LOW: _ClassVar[Quality]
+    QUALITY_DRAFT: _ClassVar[Quality]
+    QUALITY_MEDIUM: _ClassVar[Quality]
+    QUALITY_HIGH: _ClassVar[Quality]
+    QUALITY_PREMIUM: _ClassVar[Quality]
 
 class Format(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = []
@@ -37,11 +37,11 @@ CODE_IN_PROGRESS: Code
 CODE_CANCELED: Code
 CODE_ERROR: Code
 QUALITY_UNSPECIFIED: Quality
-QUALITY_PREMIUM: Quality
-QUALITY_HIGH: Quality
-QUALITY_MEDIUM: Quality
-QUALITY_DRAFT: Quality
 QUALITY_LOW: Quality
+QUALITY_DRAFT: Quality
+QUALITY_MEDIUM: Quality
+QUALITY_HIGH: Quality
+QUALITY_PREMIUM: Quality
 FORMAT_RAW: Format
 FORMAT_MP3: Format
 FORMAT_WAV: Format
