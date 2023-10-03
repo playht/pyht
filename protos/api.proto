@@ -55,14 +55,14 @@ enum Code {
   CODE_ERROR = 4;
 }
   
-// Quality of the generated audio.
+// Quality levels
 enum Quality {
-  QUALITY_UNSPECIFIED = 0; // Default value, interpreted as QUALITY_MEDIUM.
-  QUALITY_PREMIUM = 2;
-  QUALITY_HIGH = 3;
-  QUALITY_MEDIUM = 4;
-  QUALITY_DRAFT = 5;
-  QUALITY_LOW = 6;
+  QUALITY_UNSPECIFIED = 0;  // Defaults to 'DRAFT' quality.
+  QUALITY_LOW = 1;
+  QUALITY_DRAFT = 2;
+  QUALITY_MEDIUM = 3;
+  QUALITY_HIGH = 4;
+  QUALITY_PREMIUM = 5;
 }
   
 // Audio formats.
