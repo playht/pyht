@@ -1,7 +1,7 @@
 
 
 PlayHT API SDK
-========
+==============
 **pyht** is a Python SDK for the `PlayHT's Text-to-Speech API <https://play.ht/>`_. With **pyht**, you can easily convert text into high-quality audio streams in humanlike voice.
 
 Features
