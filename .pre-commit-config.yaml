@@ -14,17 +14,6 @@ repos:
         args: ["--max-line-length=120"]
         exclude: ^pyht/protos
 
-
-  - repo: https://github.com/adamchainz/blacken-docs
-    rev: 1.16.0
-    hooks:
-      - id: blacken-docs
-        exclude: ^pyht/protos|README.rst
-        additional_dependencies:
-          - "black==23.3.0"
-        args:
-          - "--line-length=120"
-
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.4.0
     hooks:
