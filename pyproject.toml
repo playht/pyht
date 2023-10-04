@@ -19,7 +19,7 @@ repository = "https://github.com/playht/pyht"
 license = "Apache-2.0"
 description = ""
 authors = ["Playht Inc. <oss@play.ht>"]
-readme = "README.rst"
+readme = "README.md"
 packages = [{ include = "pyht" }]
 include = ["pyth/*.so", "pyth/*.pyd"]          # Compiled extensions
 
