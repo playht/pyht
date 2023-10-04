@@ -17,9 +17,7 @@ class StreamingClient(client.Client):
         api_key: str,
         buffer_byte_size: int = 10485760,
     ):
-        advanced = client.Client.AdvancedOptions(
-            grpc_addr="prod.turbo.play.ht:443")
-        super().__init__(user_id, api_key, advanced=advanced)
+        super().__init__(user_id, api_key)
         self._buff_size = buffer_byte_size
 
     def play(self, text: str, voice: str, quality: str):

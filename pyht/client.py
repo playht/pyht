@@ -105,7 +105,7 @@ class Client:
             if self._lease and self._lease.expires > datetime.now() + timedelta(minutes=5):
                 return
             self._lease = self._get_lease()
-            grpc_addr = self._grpc_addr or self._lease.metadata["pigeon_url"]
+            grpc_addr = self._grpc_addr or self._lease.metadata["inference_address"]
             if self._rpc and self._rpc[0] != grpc_addr:
                 self._rpc[1].close()
                 self._rpc = None
