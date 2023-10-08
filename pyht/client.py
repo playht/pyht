@@ -48,6 +48,7 @@ class TTSOptions:
     quality: str = "faster"
     temperature: float = 0.5
     top_p: float = 0.5
+    speed: float = 1.0
 
 
 class Client:
@@ -142,6 +143,7 @@ class Client:
             temperature=options.temperature,
             top_p=options.top_p,
             sample_rate=options.sample_rate,
+            speed=options.speed,
         )
         request = api_pb2.TtsRequest(params=params, lease=self._lease.data)
         stub = api_pb2_grpc.TtsStub(self._rpc[1])
