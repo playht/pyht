@@ -159,7 +159,7 @@ class AsyncClient:
 
     def get_stream_pair(self, options: TTSOptions) -> Tuple['_InputStream', '_OutputStream']:
         """Get a linked pair of (input, output) streams.
-        
+
         These stream objects ARE NOT thread-safe. Coroutines using these stream objects must
         run on the same thread.
         """
@@ -199,7 +199,7 @@ class TextStream(AsyncIterator[str]):
         if value is None:
             raise StopAsyncIteration()
         return value
-    
+
     async def __call__(self, *args: str):
         await asyncio.gather(*(self._q.put(a) for a in args))
 
@@ -209,7 +209,7 @@ class TextStream(AsyncIterator[str]):
 
 class _InputStream:
     """Input stream handler for text.
-    
+
     usage:
        input_stream('send', 'multiple', 'words', 'in', 'one', 'call.')
        input_stream += 'Add another sentence to the stream.'
@@ -264,6 +264,6 @@ class _OutputStream(AsyncIterator[bytes]):
             raise StopAsyncIteration()
         else:
             return value
-    
+
     def close(self):
         self._close.set()

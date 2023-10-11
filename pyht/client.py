@@ -49,7 +49,7 @@ class Client:
         assert api_key, "api_key is required"
 
         self._advanced = advanced or self.AdvancedOptions()
-        
+
         self._lease_factory = LeaseFactory(user_id, api_key, self._advanced.api_url)
         self._lease: Lease | None = None
         self._rpc: Tuple[str, Channel] | None = None
@@ -90,7 +90,7 @@ class Client:
                 self._rpc = (grpc_addr, channel)
             if self._timer:
                 self._timer.cancel()
-            
+
             if self._advanced.auto_refresh_lease:
                 self._schedule_refresh()
 
@@ -153,7 +153,7 @@ class Client:
 
     def get_stream_pair(self, options: TTSOptions) -> Tuple['_InputStream', '_OutputStream']:
         """Get a linked pair of (input, output) streams.
-        
+
         These stream objects are thread-aware and safe to use in separate threads.
         """
         shared_q = queue.Queue()
@@ -187,7 +187,7 @@ class TextStream(Iterator[str]):
         if value is None:
             raise StopIteration()
         return value
-    
+
     def __call__(self, *args: str):
         for a in args:
             self._q.put(a)
@@ -198,7 +198,7 @@ class TextStream(Iterator[str]):
 
 class _InputStream:
     """Input stream handler for text.
-    
+
     usage:
        input_stream('send', 'multiple', 'words', 'in', 'one', 'call.')
        input_stream += 'Add another sentence to the stream.'
@@ -253,6 +253,6 @@ class _OutputStream(Iterator[bytes]):
         if value is None:
             raise StopIteration()
         return value
-    
+
     def close(self):
         self._close.set()
