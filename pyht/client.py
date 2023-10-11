@@ -30,7 +30,7 @@ class TTSOptions:
     top_p: float = 0.5
 
 
-class Client(object):
+class Client:
     @dataclass
     class AdvancedOptions:
         api_url: str = "https://api.play.ht/api"
@@ -60,9 +60,12 @@ class Client(object):
 
     def _schedule_refresh(self):
         assert self._lock.locked
-        refresh_in = (
-            self._lease.expires - timedelta(minutes=5) - datetime.now()
-        ).total_seconds()
+        if self._lease is None:
+            refresh_in = timedelta(minutes=4, seconds=45).total_seconds()
+        else:
+            refresh_in = (
+                self._lease.expires - timedelta(minutes=5) - datetime.now()
+            ).total_seconds()
         self._timer = threading.Timer(refresh_in, self.refresh_lease)
         self._timer.start()
 
@@ -193,7 +196,7 @@ class TextStream(Iterator[str]):
         self._q.put(None)
 
 
-class _InputStream(object):
+class _InputStream:
     """Input stream handler for text.
     
     usage:

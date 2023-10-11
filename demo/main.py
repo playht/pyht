@@ -15,7 +15,7 @@ from pyht.async_client import AsyncClient
 from pyht.protos import api_pb2
 
 
-""" === SYNC EXAMPLE === """
+# === SYNC EXAMPLE ===
 
 
 def play_audio(data: Generator[bytes, None, None] | Iterable[bytes]):
@@ -29,10 +29,7 @@ def play_audio(data: Generator[bytes, None, None] | Iterable[bytes]):
             start_time = time.time()
             continue  # Drop the first response, we don't want a header.
         elif i == 1:
-            print(
-                "First audio byte received in:",
-                time.time() - start_time
-            )
+            print("First audio byte received in:", time.time() - start_time)
         for sample in np.frombuffer(chunk, np.float16):
             buffer[ptr] = sample
             ptr += 1
@@ -40,7 +37,7 @@ def play_audio(data: Generator[bytes, None, None] | Iterable[bytes]):
             # Give a 4 sample worth of breathing room before starting
             # playback
             audio = sa.play_buffer(buffer, 1, 2, 24000)
-    approx_run_time = ptr/24_000
+    approx_run_time = ptr / 24_000
     time.sleep(max(approx_run_time - time.time() + start_time, 0))
     if audio is not None:
         audio.stop()
@@ -58,11 +55,7 @@ def main(
     client = Client(user, key)
 
     # Set the speech options
-    options = TTSOptions(
-        voice=voice,
-        format=api_pb2.FORMAT_WAV,
-        quality=quality
-    )
+    options = TTSOptions(voice=voice, format=api_pb2.FORMAT_WAV, quality=quality)
 
     # Get the streams
     in_stream, out_stream = client.get_stream_pair(options)
@@ -75,7 +68,7 @@ def main(
     for t in text:
         in_stream(t)
     in_stream.done()
-    
+
     # cleanup
     audio_thread.join()
     out_stream.close()
@@ -96,7 +89,7 @@ def main(
     return 0
 
 
-""" === ASYNC EXAMPLE === """
+# === ASYNC EXAMPLE ===
 
 
 async def async_play_audio(data: AsyncGenerator[bytes, None] | AsyncIterable[bytes]):
@@ -112,10 +105,7 @@ async def async_play_audio(data: AsyncGenerator[bytes, None] | AsyncIterable[byt
             start_time = time.time()
             continue  # Drop the first response, we don't want a header.
         elif i == 1:
-            print(
-                "First audio byte received in:",
-                time.time() - start_time
-            )
+            print("First audio byte received in:", time.time() - start_time)
         for sample in np.frombuffer(chunk, np.float16):
             buffer[ptr] = sample
             ptr += 1
@@ -123,7 +113,7 @@ async def async_play_audio(data: AsyncGenerator[bytes, None] | AsyncIterable[byt
             # Give a 4 sample worth of breathing room before starting
             # playback
             audio = sa.play_buffer(buffer, 1, 2, 24000)
-    approx_run_time = ptr/24_000
+    approx_run_time = ptr / 24_000
     await asyncio.sleep(max(approx_run_time - time.time() + start_time, 0))
     if audio is not None:
         audio.stop()
@@ -144,11 +134,7 @@ async def async_main(
     client = AsyncClient(user, key)
 
     # Set the speech options
-    options = TTSOptions(
-        voice=voice,
-        format=api_pb2.FORMAT_WAV,
-        quality=quality
-    )
+    options = TTSOptions(voice=voice, format=api_pb2.FORMAT_WAV, quality=quality)
 
     # Get the streams
     in_stream, out_stream = client.get_stream_pair(options)
@@ -158,13 +144,13 @@ async def async_main(
     # Send some text, play some audio.
     await in_stream(*text)
     await in_stream.done()
-    
+
     # cleanup
     await asyncio.wait_for(audio_task, 60)
     out_stream.close()
 
     async def get_input():
-        while not select.select([sys.stdin,],[],[],0)[0]:
+        while not select.select([sys.stdin], [], [], 0)[0]:
             await asyncio.sleep(0.01)
         return sys.stdin.readline().strip()
 
@@ -183,32 +169,21 @@ async def async_main(
     await client.close()
 
 
-
 if __name__ == "__main__":
     import argparse
-    import sys
 
     parser = argparse.ArgumentParser("PyHT Streaming Demo")
 
     parser.add_argument(
-        "--async",
-        action='store_true',
-        help="Use the asyncio client.",
-        dest='use_async'
+        "--async", action="store_true", help="Use the asyncio client.", dest="use_async"
     )
 
     parser.add_argument(
-        "--user",
-        "-u",
-        type=str,
-        required=True,
-        help="Your Play.ht User ID.")
+        "--user", "-u", type=str, required=True, help="Your Play.ht User ID."
+    )
     parser.add_argument(
-        "--key",
-        "-k",
-        type=str,
-        required=True,
-        help="Your Play.ht API key.")
+        "--key", "-k", type=str, required=True, help="Your Play.ht API key."
+    )
     parser.add_argument(
         "--voice",
         "-v",

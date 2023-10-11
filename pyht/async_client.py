@@ -15,7 +15,7 @@ from .lease import Lease, LeaseFactory
 from .protos import api_pb2, api_pb2_grpc
 
 
-class _Timer(object):
+class _Timer:
     def __init__(self, timeout: float, callback: Callable[[], Coroutine[Any, Any, None]]):
         self._timeout = timeout
         self._callback = callback
@@ -36,7 +36,7 @@ class _Timer(object):
         self._task.cancel()
 
 
-class AsyncClient(object):
+class AsyncClient:
     @dataclass
     class AdvancedOptions:
         api_url: str = "https://api.play.ht/api"
@@ -65,9 +65,12 @@ class AsyncClient(object):
 
     async def _schedule_refresh(self):
         assert self._lock.locked
-        refresh_in = (
-            self._lease.expires - timedelta(minutes=5) - datetime.now()
-        ).total_seconds()
+        if self._lease is None:
+            refresh_in = timedelta(minutes=4, seconds=45).total_seconds()
+        else:
+            refresh_in = (
+                self._lease.expires - timedelta(minutes=5) - datetime.now()
+            ).total_seconds()
         self._timer = _Timer(refresh_in, self.refresh_lease)
         self._timer.start()
 
@@ -204,7 +207,7 @@ class TextStream(AsyncIterator[str]):
         await self._q.put(None)
 
 
-class _InputStream(object):
+class _InputStream:
     """Input stream handler for text.
     
     usage:
