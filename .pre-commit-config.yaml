@@ -1,11 +1,5 @@
 exclude: ^(poetry.lock|.idea/)
 repos:
-  - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: "v0.0.287"
-    hooks:
-      - id: ruff
-        args: [--fix, --exit-non-zero-on-fix]
-        exclude: ^pyht/protos
 
   - repo: https://github.com/PyCQA/flake8
     rev: 4.0.1  # Adjust this to the latest version if needed
