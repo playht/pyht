@@ -193,7 +193,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--async",
         action='store_true',
-        help="Use the asyncio client. This will allow multiple audio generations simultaneously.",
+        help="Use the asyncio client.",
         dest='use_async'
     )
 
