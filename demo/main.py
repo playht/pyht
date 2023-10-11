@@ -50,7 +50,10 @@ def main(
     voice: str,
     quality: Literal["fast"] | Literal["faster"],
     interactive: bool,
+    use_async: bool,
 ):
+    del use_async
+    
     # Setup the client
     client = Client(user, key)
 
