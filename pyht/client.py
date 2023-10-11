@@ -204,8 +204,9 @@ class _InputStream:
        input_stream += 'Add another sentence to the stream.'
        input_stream.done()
     """
-    def __init__(self, client: Client, options: TTSOptions, q: queue.Queue[bytes|None]):
+    def __init__(self, client: Client, options: TTSOptions, q: queue.Queue[bytes | None]):
         self._input = TextStream()
+
         def listen():
             for output in client.stream_tts_input(self._input, options):
                 q.put(output)
@@ -233,7 +234,7 @@ class _OutputStream(Iterator[bytes]):
            <do stuff with audio bytes>
         output_stream.close()
     """
-    def __init__(self, q: queue.Queue[bytes|None]):
+    def __init__(self, q: queue.Queue[bytes | None]):
         self._close = threading.Event()
         self._q = q
 
@@ -243,7 +244,7 @@ class _OutputStream(Iterator[bytes]):
     def __next__(self) -> bytes:
         while True:
             try:
-                value = self._q.get(timeout = 0.05)
+                value = self._q.get(timeout=0.05)
                 break
             except queue.Empty as e:
                 if self._close.is_set():

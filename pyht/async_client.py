@@ -215,8 +215,9 @@ class _InputStream:
        input_stream += 'Add another sentence to the stream.'
        input_stream.done()
     """
-    def __init__(self, client: AsyncClient, options: TTSOptions, q: asyncio.Queue[bytes|None]):
+    def __init__(self, client: AsyncClient, options: TTSOptions, q: asyncio.Queue[bytes | None]):
         self._input = TextStream()
+
         async def listen():
             async for output in client.stream_tts_input(self._input, options):
                 await q.put(output)
@@ -243,7 +244,7 @@ class _OutputStream(AsyncIterator[bytes]):
            <do stuff with audio bytes>
         output_stream.close()
     """
-    def __init__(self, q: asyncio.Queue[bytes|None]):
+    def __init__(self, q: asyncio.Queue[bytes | None]):
         self._close = asyncio.Event()
         self._q = q
 
@@ -253,7 +254,7 @@ class _OutputStream(AsyncIterator[bytes]):
     async def __anext__(self) -> bytes:
         while True:
             try:
-                value = await asyncio.wait_for(self._q.get(), timeout = 0.05)
+                value = await asyncio.wait_for(self._q.get(), timeout=0.05)
                 break
             except asyncio.TimeoutError as e:
                 if self._close.is_set():
