@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 import io
 
-from grpc.aio import Channel, insecure_channel, secure_channel
+from grpc.aio import Channel, Call, insecure_channel, secure_channel
 from grpc import ssl_channel_credentials
 
 
@@ -119,7 +119,12 @@ class AsyncClient:
             async for data in self.tts(buffer.getvalue(), options):
                 yield data
 
-    async def tts(self, text: str | List[str], options: TTSOptions) -> AsyncIterable[bytes]:
+    async def tts(
+        self,
+        text: str | List[str],
+        options: TTSOptions,
+        context: AsyncContext | None = None
+    ) -> AsyncIterable[bytes]:
         await self.refresh_lease()
         async with self._lock:
             assert self._lease is not None and self._rpc is not None
@@ -153,9 +158,11 @@ class AsyncClient:
         )
         request = api_pb2.TtsRequest(params=params, lease=lease_data)
         stub = api_pb2_grpc.TtsStub(self._rpc[1])
-        stream = stub.Tts(request)
-        async for item in stream:
-            yield item.data
+        stream: UnaryStreamRendezvous = stub.Tts(request)
+        if context is not None:
+            context.assign(stream)
+        async for response in stream:
+            yield response.data
 
     def get_stream_pair(self, options: TTSOptions) -> Tuple['_InputStream', '_OutputStream']:
         """Get a linked pair of (input, output) streams.
@@ -183,6 +190,31 @@ class AsyncClient:
             asyncio.ensure_future(self.close())
         except RuntimeError:
             asyncio.run(self.close())
+
+
+class UnaryStreamRendezvous(AsyncIterator[api_pb2.TtsResponse], Call):
+    pass
+
+
+class AsyncContext:
+    def __init__(self):
+        self._stream: asyncio.Future[UnaryStreamRendezvous] = asyncio.Future()
+
+    def assign(self, stream: UnaryStreamRendezvous):
+        self._stream.set_result(stream)
+
+    def cancel(self):
+        self._stream.add_done_callback(lambda s: s.result().cancel())
+
+    def cancelled(self) -> bool:
+        if self._stream.done():
+            return self._stream.result().cancelled()
+        return False
+
+    def done(self) -> bool:
+        if self._stream.done():
+            return self._stream.result().done()
+        return False
 
 
 class TextStream(AsyncIterator[str]):
