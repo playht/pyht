@@ -3,6 +3,6 @@ __version__ = "0.0.0"
 
 
 from .client import Client, Format, TTSOptions
-from .async_client import AsyncClient
+from .async_client import AsyncClient, AsyncContext
 
-__all__ = ["Client", "Format", "TTSOptions", "AsyncClient"]
+__all__ = ["Client", "Format", "TTSOptions", "AsyncClient", "AsyncContext"]

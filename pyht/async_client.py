@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 import io
 
-from grpc.aio import Channel, insecure_channel, secure_channel
+from grpc.aio import Channel, Call, insecure_channel, secure_channel
 from grpc import ssl_channel_credentials
 
 
@@ -101,7 +101,8 @@ class AsyncClient:
     async def stream_tts_input(
         self,
         text_stream: AsyncGenerator[str, None] | AsyncIterable[str],
-        options: TTSOptions
+        options: TTSOptions,
+        context: AsyncContext | None = None
     ):
         """Stream input to Play.ht via the text_stream object."""
         buffer = io.StringIO()
@@ -116,10 +117,15 @@ class AsyncClient:
             buffer = io.StringIO()
         # If text_stream closes, send all remaining text, regardless of sentence structure.
         if buffer.tell() > 0:
-            async for data in self.tts(buffer.getvalue(), options):
+            async for data in self.tts(buffer.getvalue(), options, context):
                 yield data
 
-    async def tts(self, text: str | List[str], options: TTSOptions) -> AsyncIterable[bytes]:
+    async def tts(
+        self,
+        text: str | List[str],
+        options: TTSOptions,
+        context: AsyncContext | None = None
+    ) -> AsyncIterable[bytes]:
         await self.refresh_lease()
         async with self._lock:
             assert self._lease is not None and self._rpc is not None
@@ -153,9 +159,11 @@ class AsyncClient:
         )
         request = api_pb2.TtsRequest(params=params, lease=lease_data)
         stub = api_pb2_grpc.TtsStub(self._rpc[1])
-        stream = stub.Tts(request)
-        async for item in stream:
-            yield item.data
+        stream: UnaryStreamRendezvous = stub.Tts(request)
+        if context is not None:
+            context.assign(stream)
+        async for response in stream:
+            yield response.data
 
     def get_stream_pair(self, options: TTSOptions) -> Tuple['_InputStream', '_OutputStream']:
         """Get a linked pair of (input, output) streams.
@@ -183,6 +191,27 @@ class AsyncClient:
             asyncio.ensure_future(self.close())
         except RuntimeError:
             asyncio.run(self.close())
+
+
+class UnaryStreamRendezvous(AsyncIterator[api_pb2.TtsResponse], Call):
+    pass
+
+
+class AsyncContext:
+    def __init__(self):
+        self._stream: UnaryStreamRendezvous
+
+    def assign(self, stream: UnaryStreamRendezvous):
+        self._stream = stream
+
+    def cancel(self) -> bool:
+        return self._stream.cancel()
+
+    def cancelled(self) -> bool:
+        return self._stream.cancelled()
+
+    def done(self) -> bool:
+        return self._stream.done()
 
 
 class TextStream(AsyncIterator[str]):
@@ -217,9 +246,10 @@ class _InputStream:
     """
     def __init__(self, client: AsyncClient, options: TTSOptions, q: asyncio.Queue[bytes | None]):
         self._input = TextStream()
+        self.context = AsyncContext()
 
         async def listen():
-            async for output in client.stream_tts_input(self._input, options):
+            async for output in client.stream_tts_input(self._input, options, self.context):
                 await q.put(output)
             await q.put(None)
 
