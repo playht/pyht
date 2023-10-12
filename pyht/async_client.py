@@ -101,8 +101,7 @@ class AsyncClient:
     async def stream_tts_input(
         self,
         text_stream: AsyncGenerator[str, None] | AsyncIterable[str],
-        options: TTSOptions,
-        context: AsyncContext | None = None
+        options: TTSOptions
     ):
         """Stream input to Play.ht via the text_stream object."""
         buffer = io.StringIO()
@@ -117,7 +116,7 @@ class AsyncClient:
             buffer = io.StringIO()
         # If text_stream closes, send all remaining text, regardless of sentence structure.
         if buffer.tell() > 0:
-            async for data in self.tts(buffer.getvalue(), options, context):
+            async for data in self.tts(buffer.getvalue(), options):
                 yield data
 
     async def tts(
@@ -199,19 +198,23 @@ class UnaryStreamRendezvous(AsyncIterator[api_pb2.TtsResponse], Call):
 
 class AsyncContext:
     def __init__(self):
-        self._stream: UnaryStreamRendezvous
+        self._stream: asyncio.Future[UnaryStreamRendezvous] = asyncio.Future()
 
     def assign(self, stream: UnaryStreamRendezvous):
-        self._stream = stream
+        self._stream.set_result(stream)
 
-    def cancel(self) -> bool:
-        return self._stream.cancel()
+    def cancel(self):
+        self._stream.add_done_callback(lambda s: s.result().cancel())
 
     def cancelled(self) -> bool:
-        return self._stream.cancelled()
+        if self._stream.done():
+            return self._stream.result().cancelled()
+        return False
 
     def done(self) -> bool:
-        return self._stream.done()
+        if self._stream.done():
+            return self._stream.result().done()
+        return False
 
 
 class TextStream(AsyncIterator[str]):
@@ -246,10 +249,9 @@ class _InputStream:
     """
     def __init__(self, client: AsyncClient, options: TTSOptions, q: asyncio.Queue[bytes | None]):
         self._input = TextStream()
-        self.context = AsyncContext()
 
         async def listen():
-            async for output in client.stream_tts_input(self._input, options, self.context):
+            async for output in client.stream_tts_input(self._input, options):
                 await q.put(output)
             await q.put(None)
 
