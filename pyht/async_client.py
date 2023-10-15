@@ -155,6 +155,7 @@ class AsyncClient:
             temperature=options.temperature,
             top_p=options.top_p,
             sample_rate=options.sample_rate,
+            speed=options.speed,
         )
         request = api_pb2.TtsRequest(params=params, lease=lease_data)
         stub = api_pb2_grpc.TtsStub(self._rpc[1])
