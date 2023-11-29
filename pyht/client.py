@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 import io
 import queue
-import re
 import threading
 
 from grpc import Channel, insecure_channel, secure_channel, ssl_channel_credentials
@@ -14,10 +13,7 @@ from grpc import Channel, insecure_channel, secure_channel, ssl_channel_credenti
 from .lease import Lease, LeaseFactory
 from .protos import api_pb2, api_pb2_grpc
 from .protos.api_pb2 import Format
-
-
-SENTENCE_END_REGEX = re.compile('.*[-.!?;:…]$')
-SENTENCE_SPLIT_REGEX = re.compile('\\w[-.!?;:…]\\W')
+from .utils import ensure_sentence_end, normalize, split_text, SENTENCE_END_REGEX
 
 
 @dataclass
@@ -121,19 +117,10 @@ class Client:
             lease_data = self._lease.data
 
         if isinstance(text, str):
-            if len(text) > 200:
-                start = 0
-                subs: List[str] = []
-                for m in SENTENCE_SPLIT_REGEX.finditer(text):
-                    end = m.span()[-1]
-                    subs.append(text[start:end].strip())
-                    start = end
-                remainder = text[start:].strip()
-                if remainder:
-                    subs.append(remainder)
-                text = subs
-            else:
-                text = [text]
+            text = split_text(normalize(text))
+        else:
+            text = [normalize(x) for x in text]
+        text = ensure_sentence_end(text)
 
         quality = options.quality.lower()
 
