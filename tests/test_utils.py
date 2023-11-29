@@ -116,10 +116,8 @@ class TestSplitText:
 
     def test_text_too_long_fails(self):
         with pytest.raises(ValueError, match="text too long:"):
-        # with assertRaisesRegex(ValueError, "text too long:"):
             utils.split_text(f"{self.sample_text} {self.sample_text}")
 
     def test_sentence_too_long_fails(self):
         with pytest.raises(ValueError, match="Unable to split text, sentence too long:"):
-        # with assertRaisesRegex(ValueError, "Unable to split text, sentence too long:"):
             utils.split_text(self.sample_text_no_breaks)
