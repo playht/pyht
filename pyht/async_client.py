@@ -10,9 +10,10 @@ from grpc.aio import Channel, Call, insecure_channel, secure_channel
 from grpc import ssl_channel_credentials
 
 
-from .client import TTSOptions, SENTENCE_END_REGEX, SENTENCE_SPLIT_REGEX
+from .client import TTSOptions
 from .lease import Lease, LeaseFactory
 from .protos import api_pb2, api_pb2_grpc
+from .utils import ensure_sentence_end, normalize, split_text, SENTENCE_END_REGEX
 
 
 class _Timer:
@@ -131,19 +132,10 @@ class AsyncClient:
             lease_data = self._lease.data
 
         if isinstance(text, str):
-            if len(text) > 200:
-                start = 0
-                subs: List[str] = []
-                for m in SENTENCE_SPLIT_REGEX.finditer(text):
-                    end = m.span()[-1]
-                    subs.append(text[start:end].strip())
-                    start = end
-                remainder = text[start:].strip()
-                if remainder:
-                    subs.append(remainder)
-                text = subs
-            else:
-                text = [text]
+            text = split_text(normalize(text))
+        else:
+            text = [normalize(x) for x in text]
+        text = ensure_sentence_end(text)
 
         quality = options.quality.lower()
 
