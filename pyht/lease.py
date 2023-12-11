@@ -23,12 +23,13 @@ class Lease:
             f"Bearer {api_key}" if not api_key.startswith("Bearer ") else api_key
         )
         api_headers = {"X-User-Id": user_id, "Authorization": auth_header}
-        response = requests.post(
-            f"{api_url}/v2/leases", headers=api_headers, timeout=10
-        )
-        response.raise_for_status()
-
-        return response.content
+        with requests.post(
+            f"{api_url}/v2/leases",
+            headers=api_headers,
+            timeout=60
+        ) as response:
+            response.raise_for_status()
+            return response.content
 
     @classmethod
     def get(cls, user_id: str, api_key: str, api_url: str = DEFAULT_API_URL) -> "Lease":
