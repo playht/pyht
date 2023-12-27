@@ -2,6 +2,86 @@ syntax = "proto3";
 
 package playht.v1;
 
+// Quality levels
+enum Quality {
+  QUALITY_UNSPECIFIED = 0;  // Defaults to 'DRAFT' quality.
+  QUALITY_LOW = 1;
+  QUALITY_DRAFT = 2;
+  QUALITY_MEDIUM = 3;
+  QUALITY_HIGH = 4;
+  QUALITY_PREMIUM = 5;
+}
+
+// Status codes.
+enum Code {
+  CODE_UNSPECIFIED = 0;
+  CODE_COMPLETE = 1;
+  CODE_IN_PROGRESS = 2;
+  CODE_CANCELED = 3;
+  CODE_ERROR = 4;
+}
+
+// Audio formats.
+enum Format {
+  FORMAT_RAW = 0; // Default value, PCM_FP32 (model native).
+  FORMAT_MP3 = 1; // 128kbps MP3
+  FORMAT_WAV = 2; // 16-bit (uint16) PCM
+  FORMAT_OGG = 3; // 80kbps OGG Vorbis
+  FORMAT_FLAC = 4; // 16-bit (int16) FLAC
+  FORMAT_MULAW = 5; // 8-bit (uint8) PCM headerless
+}
+
+message Credentials {
+  string id = 1;
+  bytes token = 2;
+}
+
+message Status {
+  Code code = 1;
+  repeated string message = 2;
+}
+
+message TtsParams {
+  // Text to be synthesized.
+  repeated string text = 1;
+  // Voice to be used.
+  string voice = 2;
+
+  // Quality of the generated audio.
+  optional Quality quality = 3;
+  // Audio format to return.
+  optional Format format = 4;
+  // Sample rate to return in hz. Native sample rate is 24000 hz (default).
+  optional int32 sample_rate = 5;
+  // Speaking rate, 1.0 (default) is normal speed.
+  optional float speed = 6;
+  // Seed for random number generator. If unspecified, a random seed is used.
+  optional int32 seed = 7;
+  // Model sampling temperature, 1.1 is default.
+  optional float temperature = 8;
+  // Model probability mass sampling threshold, 0.85 is default.
+  optional float top_p = 9;
+  
+  // Default is 1.0
+  optional float style_guidance = 10;
+  // Default is 2.0
+  optional float voice_guidance = 11;
+  // Default is -1
+  optional int32 audio_source = 12;
+  // default is 36
+  optional int32 speaker_attributes = 13;
+  // Default is -1
+  optional int32 speech_attributes = 14;
+  // Default is -1
+  optional int32 language_identifier = 15;
+  // Default is 1.0
+  optional float text_guidance = 16;
+  
+  reserved 17;
+
+  // JSON string with other various parameters.
+  optional string other = 99;
+}
 
 service Tts {
   rpc Tts (TtsRequest) returns (stream TtsResponse);
@@ -18,64 +98,4 @@ message TtsResponse {
   string id = 2;
   bytes data = 3;
   Status status = 4;
-  // TODO(nfc): Add whatever metadata we may need here.
-}
-
-message TtsParams {
-  // Text to be synthesized.
-  repeated string text = 1;
-  // Voice to be used.
-  string voice = 2;
-  // Quality of the generated audio.
-  optional Quality quality = 3;
-  
-  // Audio format to return.
-  optional Format format = 4;
-  // Sample rate to return in hz. Native sample rate is 24000 hz (default).
-  optional int32 sample_rate = 5;
-  // Speaking rate, 1.0 (default) is normal speed.
-  optional float speed = 6;
-  // Seed for random number generator. If unspecified, a random seed is used.
-  optional int32 seed = 7;
-  // Model sampling temperature, 0.6 is default.
-  optional float temperature = 8;
-  // Model probability mass sampling threshold, 1.0 (disabled) is default.
-  optional float top_p = 9;
-
-  // JSON string with other various parameters.
-  optional string other = 99;
-}
-
-// Status codes.
-enum Code {
-  CODE_UNSPECIFIED = 0;
-  CODE_COMPLETE = 1;
-  CODE_IN_PROGRESS = 2;
-  CODE_CANCELED = 3;
-  CODE_ERROR = 4;
-}
-  
-// Quality levels
-enum Quality {
-  QUALITY_UNSPECIFIED = 0;  // Defaults to 'DRAFT' quality.
-  QUALITY_LOW = 1;
-  QUALITY_DRAFT = 2;
-  QUALITY_MEDIUM = 3;
-  QUALITY_HIGH = 4;
-  QUALITY_PREMIUM = 5;
-}
-  
-// Audio formats.
-enum Format {
-  FORMAT_RAW = 0; // raw fp32 PCM samples
-  FORMAT_MP3 = 1; // 128kbps MP3
-  FORMAT_WAV = 2; // 16-bit (uint16) PCM
-  FORMAT_OGG = 3; // 80kbps OGG Vorbis
-  FORMAT_FLAC = 4; // 16-bit (int16) FLAC
-  FORMAT_MULAW = 5; // 8-bit (uint8) PCM headerless
-}
-  
-message Status {
-  Code code = 1;
-  repeated string message = 2;
 }

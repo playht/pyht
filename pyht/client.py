@@ -25,6 +25,13 @@ class TTSOptions:
     temperature: float = 0.5
     top_p: float = 0.5
     speed: float = 1.0
+    style_guidance: float = 1.0
+    voice_guidance: float = 2.0
+    audio_source: int = -1
+    speaker_attributes: int = 36
+    speech_attributes: int = -1
+    language_identifier: int = -1
+    text_guidance: float = 1.0
 
 
 class Client:
@@ -143,6 +150,13 @@ class Client:
             top_p=options.top_p,
             sample_rate=options.sample_rate,
             speed=options.speed,
+            style_guidance=options.style_guidance,
+            voice_guidance=options.voice_guidance,
+            audio_source=options.audio_source,
+            speaker_attributes=options.speaker_attributes,
+            speech_attributes=options.speech_attributes,
+            language_identifier=options.language_identifier,
+            text_guidance=options.text_guidance
         )
         request = api_pb2.TtsRequest(params=params, lease=lease_data)
         stub = api_pb2_grpc.TtsStub(self._rpc[1])
