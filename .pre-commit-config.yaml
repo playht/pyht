@@ -1,8 +1,7 @@
 exclude: ^(poetry.lock|.idea/)
 repos:
-
   - repo: https://github.com/PyCQA/flake8
-    rev: 4.0.1  # Adjust this to the latest version if needed
+    rev: 4.0.1 # Adjust this to the latest version if needed
     hooks:
       - id: flake8
         args: ["--max-line-length=120"]
@@ -44,6 +43,7 @@ repos:
           - "--deps-file=pyproject.toml"
           - "--sections=tool.poetry.dependencies"
           - "--exclude-deps=rich"
+          - "--exclude-dep=grpcio-tools"
 
   - repo: https://github.com/codespell-project/codespell
     rev: v2.2.5
