@@ -18,7 +18,7 @@ class Lease:
         self.metadata = json.loads(self.data[72:].decode())
 
     @classmethod
-    def _get(cls, user_id: str, api_key: str, api_url: str) -> bytes:
+    def _get(cls, user_id: str, api_key: str, api_url: str, _retry=True) -> bytes:
         auth_header = (
             f"Bearer {api_key}" if not api_key.startswith("Bearer ") else api_key
         )
@@ -28,8 +28,13 @@ class Lease:
             headers=api_headers,
             timeout=60
         ) as response:
-            response.raise_for_status()
-            return response.content
+            try:
+                response.raise_for_status()
+                return response.content
+            except requests.HTTPError as e:
+                if _retry and e.response.status_code >= 500:
+                    return cls._get(user_id, api_key, api_url, _retry=False)
+                raise e
 
     @classmethod
     def get(cls, user_id: str, api_key: str, api_url: str = DEFAULT_API_URL) -> "Lease":

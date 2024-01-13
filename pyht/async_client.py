@@ -1,12 +1,12 @@
 from __future__ import annotations
-from typing import Any, AsyncGenerator, AsyncIterable, AsyncIterator, Callable, Coroutine, List, Tuple
+from typing import Any, AsyncGenerator, AsyncIterable, AsyncIterator, Coroutine
 
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import io
 
-from grpc.aio import Channel, Call, insecure_channel, secure_channel
+from grpc.aio import Channel, Call, insecure_channel, secure_channel, UnaryStreamCall
 from grpc import ssl_channel_credentials
 
 
@@ -16,25 +16,7 @@ from .protos import api_pb2, api_pb2_grpc
 from .utils import ensure_sentence_end, normalize, split_text, SENTENCE_END_REGEX
 
 
-class _Timer:
-    def __init__(self, timeout: float, callback: Callable[[], Coroutine[Any, Any, None]]):
-        self._timeout = timeout
-        self._callback = callback
-        self._task: asyncio.Task | None = None
-
-    async def _run(self):
-        await asyncio.sleep(self._timeout)
-        await self._callback()
-
-    def start(self):
-        if self._task is not None:
-            return
-        self._task = asyncio.ensure_future(self._run())
-
-    def cancel(self):
-        if self._task is None:
-            return
-        self._task.cancel()
+TtsUnaryStream = UnaryStreamCall[api_pb2.TtsRequest, api_pb2.TtsResponse]
 
 
 class AsyncClient:
@@ -50,7 +32,7 @@ class AsyncClient:
         user_id: str,
         api_key: str,
         auto_connect: bool = True,
-        advanced: "AsyncClient.AdvancedOptions" | None = None,
+        advanced: "AsyncClient.AdvancedOptions | None" = None,
     ):
         assert user_id, "user_id is required"
         assert api_key, "api_key is required"
@@ -58,31 +40,30 @@ class AsyncClient:
 
         self._lease_factory = LeaseFactory(user_id, api_key, self._advanced.api_url)
         self._lease: Lease | None = None
-        self._rpc: Tuple[str, Channel] | None = None
+        self._rpc: tuple[str, Channel] | None = None
         self._lock = asyncio.Lock()
-        self._timer: _Timer | None = None
-        if auto_connect:
+        self._stop_lease_loop = asyncio.Event()
+        if self._advanced.auto_refresh_lease:
+            self._lease_loop_future = asyncio.ensure_future(self._lease_loop())
+        else:
+            self._lease_loop_future = asyncio.Future()
+            self._lease_loop_future.set_result(None)
+        if auto_connect and not self._advanced.auto_refresh_lease:
             asyncio.ensure_future(self.refresh_lease())
 
-    async def _schedule_refresh(self):
-        assert self._lock.locked
-        if self._lease is None:
-            refresh_in = timedelta(minutes=4, seconds=45).total_seconds()
-        else:
-            refresh_in = (
-                self._lease.expires - timedelta(minutes=5) - datetime.now()
-            ).total_seconds()
-        self._timer = _Timer(refresh_in, self.refresh_lease)
-        self._timer.start()
+    async def _lease_loop(self):
+        refresh_time = timedelta(minutes=4, seconds=30)
+        while not self._stop_lease_loop.is_set():
+            await self.refresh_lease()
+            await asyncio.sleep(refresh_time.total_seconds())
 
     async def refresh_lease(self):
         """Manually refresh credentials with Play.ht."""
         async with self._lock:
             if self._lease and self._lease.expires > datetime.now() - timedelta(minutes=5):
-                if self._advanced.auto_refresh_lease and self._timer is None:
-                    await self._schedule_refresh()
+                # Lease is still valid for at least the next 5 minutes.
                 return
-            self._lease = self._lease_factory()
+            self._lease = await asyncio.to_thread(self._lease_factory)
             grpc_addr = self._advanced.grpc_addr or self._lease.metadata["inference_address"]
             if self._rpc and self._rpc[0] != grpc_addr:
                 await self._rpc[1].close()
@@ -93,11 +74,6 @@ class AsyncClient:
                     else secure_channel(grpc_addr, ssl_channel_credentials())
                 )
                 self._rpc = (grpc_addr, channel)
-            if self._timer is not None:
-                self._timer.cancel()
-
-            if self._advanced.auto_refresh_lease:
-                await self._schedule_refresh()
 
     async def stream_tts_input(
         self,
@@ -122,7 +98,7 @@ class AsyncClient:
 
     async def tts(
         self,
-        text: str | List[str],
+        text: str | list[str],
         options: TTSOptions,
         context: AsyncContext | None = None
     ) -> AsyncIterable[bytes]:
@@ -151,13 +127,13 @@ class AsyncClient:
         )
         request = api_pb2.TtsRequest(params=params, lease=lease_data)
         stub = api_pb2_grpc.TtsStub(self._rpc[1])
-        stream: UnaryStreamRendezvous = stub.Tts(request)
+        stream: TtsUnaryStream = stub.Tts(request)
         if context is not None:
             context.assign(stream)
         async for response in stream:
             yield response.data
 
-    def get_stream_pair(self, options: TTSOptions) -> Tuple['_InputStream', '_OutputStream']:
+    def get_stream_pair(self, options: TTSOptions) -> tuple['_InputStream', '_OutputStream']:
         """Get a linked pair of (input, output) streams.
 
         These stream objects ARE NOT thread-safe. Coroutines using these stream objects must
@@ -170,9 +146,9 @@ class AsyncClient:
         )
 
     async def close(self):
-        if self._timer is not None:
-            self._timer.cancel()
-            self._timer = None
+        self._stop_lease_loop.set()
+        if not self._lease_loop_future.done():
+            self._lease_loop_future.cancel()
         if self._rpc is not None:
             await self._rpc[1].close()
             self._rpc = None
@@ -191,13 +167,15 @@ class UnaryStreamRendezvous(AsyncIterator[api_pb2.TtsResponse], Call):
 
 class AsyncContext:
     def __init__(self):
-        self._stream: asyncio.Future[UnaryStreamRendezvous] = asyncio.Future()
+        self._stream: asyncio.Future[TtsUnaryStream] = asyncio.Future()
 
-    def assign(self, stream: UnaryStreamRendezvous):
+    def assign(self, stream: TtsUnaryStream):
         self._stream.set_result(stream)
 
     def cancel(self):
         self._stream.add_done_callback(lambda s: s.result().cancel())
+        if not self._stream.cancel():
+            self._stream.result().cancel()
 
     def cancelled(self) -> bool:
         if self._stream.done():
