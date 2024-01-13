@@ -62,9 +62,9 @@ class AsyncClient:
     async def refresh_lease(self):
         """Manually refresh credentials with Play.ht."""
         async with self._lock:
-            # if self._lease and self._lease.expires > datetime.now() - timedelta(minutes=5):
-            #     # Lease is still valid for at least the next 5 minutes.
-            #     return
+            if self._lease and self._lease.expires > datetime.now() - timedelta(minutes=5):
+                # Lease is still valid for at least the next 5 minutes.
+                return
             self._lease = await asyncio.to_thread(self._lease_factory)
             grpc_addr = self._advanced.grpc_addr or self._lease.metadata["inference_address"]
             if self._rpc and self._rpc[0] != grpc_addr:
