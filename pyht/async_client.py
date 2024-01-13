@@ -4,7 +4,6 @@ from typing import Any, AsyncGenerator, AsyncIterable, AsyncIterator, Coroutine
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from functools import wraps
 import io
 
 from grpc.aio import Channel, Call, insecure_channel, secure_channel, UnaryStreamCall
@@ -43,7 +42,6 @@ class AsyncClient:
         self._lease: Lease | None = None
         self._rpc: tuple[str, Channel] | None = None
         self._lock = asyncio.Lock()
-        self._lease_loop_future: asyncio.Future | None = None
         self._stop_lease_loop = asyncio.Event()
         if self._advanced.auto_refresh_lease:
             self._lease_loop_future = asyncio.ensure_future(self._lease_loop())

@@ -64,4 +64,3 @@ class LeaseFactory:
 
     def __call__(self) -> Lease:
         return Lease.get(self._user, self._key, self._url)
-
