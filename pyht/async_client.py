@@ -5,6 +5,7 @@ import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import io
+import sys
 
 from grpc.aio import Channel, Call, insecure_channel, secure_channel, UnaryStreamCall
 from grpc import ssl_channel_credentials
@@ -17,6 +18,20 @@ from .utils import ensure_sentence_end, normalize, split_text, SENTENCE_END_REGE
 
 
 TtsUnaryStream = UnaryStreamCall[api_pb2.TtsRequest, api_pb2.TtsResponse]
+
+
+# asyncio.to_thread was not added until Python 3.8, so we make our own here.
+if sys.version_info >= (3, 9):
+    to_thread = asyncio.to_thread
+else:
+    import contextvars
+    import functools
+
+    async def to_thread(func, /, *args, **kwargs):
+        loop = asyncio.get_running_loop()
+        ctx = contextvars.copy_context()
+        func_call = functools.partial(ctx.run, func, *args, **kwargs)
+        return await loop.run_in_executor(None, func_call)
 
 
 class AsyncClient:
@@ -63,7 +78,7 @@ class AsyncClient:
             if self._lease and self._lease.expires > datetime.now() - timedelta(minutes=5):
                 # Lease is still valid for at least the next 5 minutes.
                 return
-            self._lease = await asyncio.to_thread(self._lease_factory)
+            self._lease = await to_thread(self._lease_factory)
             grpc_addr = self._advanced.grpc_addr or self._lease.metadata["inference_address"]
             if self._rpc and self._rpc[0] != grpc_addr:
                 await self._rpc[1].close()
