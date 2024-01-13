@@ -161,6 +161,8 @@ dmypy.json
 # pytype static type analyzer
 .pytype/
 
+.flake8
+
 
 ##---------------------------------------------------
 # Windows default .gitignore
