@@ -78,7 +78,8 @@ class AsyncClient:
     async def stream_tts_input(
         self,
         text_stream: AsyncGenerator[str, None] | AsyncIterable[str],
-        options: TTSOptions
+        options: TTSOptions,
+        voice_engine: str | None = None,
     ):
         """Stream input to Play.ht via the text_stream object."""
         buffer = io.StringIO()
@@ -88,18 +89,19 @@ class AsyncClient:
             buffer.write(" ")  # normalize word spacing.
             if SENTENCE_END_REGEX.match(t) is None:
                 continue
-            async for data in self.tts(buffer.getvalue(), options):
+            async for data in self.tts(buffer.getvalue(), options, voice_engine):
                 yield data
             buffer = io.StringIO()
         # If text_stream closes, send all remaining text, regardless of sentence structure.
         if buffer.tell() > 0:
-            async for data in self.tts(buffer.getvalue(), options):
+            async for data in self.tts(buffer.getvalue(), options, voice_engine):
                 yield data
 
     async def tts(
         self,
         text: str | list[str],
         options: TTSOptions,
+        voice_engine: str | None = None,
         context: AsyncContext | None = None
     ) -> AsyncIterable[bytes]:
         await self.refresh_lease()
@@ -114,12 +116,16 @@ class AsyncClient:
         text = ensure_sentence_end(text)
 
         quality = options.quality.lower()
+        _quality = api_pb2.QUALITY_DRAFT
+
+        if voice_engine == "PlayHT2.0" and quality != "faster":
+            _quality = api_pb2.QUALITY_MEDIUM
 
         params = api_pb2.TtsParams(
             text=text,
             voice=options.voice,
             format=options.format,
-            quality=api_pb2.QUALITY_DRAFT if quality == "faster" else api_pb2.QUALITY_MEDIUM,
+            quality=_quality,
             temperature=options.temperature,
             top_p=options.top_p,
             sample_rate=options.sample_rate,
@@ -133,7 +139,11 @@ class AsyncClient:
         async for response in stream:
             yield response.data
 
-    def get_stream_pair(self, options: TTSOptions) -> tuple['_InputStream', '_OutputStream']:
+    def get_stream_pair(
+        self,
+        options: TTSOptions,
+        voice_engine: str | None = None
+    ) -> tuple['_InputStream', '_OutputStream']:
         """Get a linked pair of (input, output) streams.
 
         These stream objects ARE NOT thread-safe. Coroutines using these stream objects must
@@ -141,7 +151,7 @@ class AsyncClient:
         """
         shared_q = asyncio.Queue()
         return (
-            _InputStream(self, options, shared_q),
+            _InputStream(self, options, shared_q, voice_engine),
             _OutputStream(shared_q)
         )
 
@@ -218,11 +228,17 @@ class _InputStream:
        input_stream += 'Add another sentence to the stream.'
        input_stream.done()
     """
-    def __init__(self, client: AsyncClient, options: TTSOptions, q: asyncio.Queue[bytes | None]):
+    def __init__(
+        self,
+        client: AsyncClient,
+        options: TTSOptions,
+        q: asyncio.Queue[bytes | None],
+        voice_engine: str | None,
+    ):
         self._input = TextStream()
 
         async def listen():
-            async for output in client.stream_tts_input(self._input, options):
+            async for output in client.stream_tts_input(self._input, options, voice_engine):
                 await q.put(output)
             await q.put(None)
 
