@@ -20,7 +20,7 @@ from .utils import ensure_sentence_end, normalize, split_text, SENTENCE_END_REGE
 TtsUnaryStream = UnaryStreamCall[api_pb2.TtsRequest, api_pb2.TtsResponse]
 
 
-# asyncio.to_thread was not added until Python 3.8, so we make our own here.
+# asyncio.to_thread was not added until Python 3.8+, so we make our own here.
 if sys.version_info >= (3, 9):
     to_thread = asyncio.to_thread
 else:
