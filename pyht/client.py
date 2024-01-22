@@ -40,7 +40,7 @@ class Client:
         user_id: str,
         api_key: str,
         auto_connect: bool = True,
-        advanced: "Client.AdvancedOptions" | None = None,
+        advanced: "Client.AdvancedOptions | None" = None,
     ):
         assert user_id, "user_id is required"
         assert api_key, "api_key is required"
@@ -94,7 +94,8 @@ class Client:
     def stream_tts_input(
         self,
         text_stream: Generator[str, None, None] | Iterable[str],
-        options: TTSOptions
+        options: TTSOptions,
+        voice_engine: str | None = None
     ) -> Iterable[bytes]:
         """Stream input to Play.ht via the text_stream object."""
         buffer = io.StringIO()
@@ -104,13 +105,18 @@ class Client:
             buffer.write(" ")  # normalize word spacing.
             if SENTENCE_END_REGEX.match(t) is None:
                 continue
-            yield from self.tts(buffer.getvalue(), options)
+            yield from self.tts(buffer.getvalue(), options, voice_engine)
             buffer = io.StringIO()
         # If text_stream closes, send all remaining text, regardless of sentence structure.
         if buffer.tell() > 0:
-            yield from self.tts(buffer.getvalue(), options)
+            yield from self.tts(buffer.getvalue(), options, voice_engine)
 
-    def tts(self, text: str | List[str], options: TTSOptions) -> Iterable[bytes]:
+    def tts(
+        self,
+        text: str | List[str],
+        options: TTSOptions,
+        voice_engine: str | None = None
+    ) -> Iterable[bytes]:
         self.refresh_lease()
         with self._lock:
             assert self._lease is not None and self._rpc is not None, "No connection"
@@ -123,12 +129,16 @@ class Client:
         text = ensure_sentence_end(text)
 
         quality = options.quality.lower()
+        _quality = api_pb2.QUALITY_DRAFT
+
+        if voice_engine == "PlayHT2.0" and quality != "faster":
+            _quality = api_pb2.QUALITY_MEDIUM
 
         params = api_pb2.TtsParams(
             text=text,
             voice=options.voice,
             format=options.format,
-            quality=api_pb2.QUALITY_DRAFT if quality == "faster" else api_pb2.QUALITY_MEDIUM,
+            quality=_quality,
             temperature=options.temperature,
             top_p=options.top_p,
             sample_rate=options.sample_rate,
@@ -140,14 +150,18 @@ class Client:
         for item in response:
             yield item.data
 
-    def get_stream_pair(self, options: TTSOptions) -> Tuple['_InputStream', '_OutputStream']:
+    def get_stream_pair(
+        self,
+        options: TTSOptions,
+        voice_engine: str | None = None
+    ) -> Tuple['_InputStream', '_OutputStream']:
         """Get a linked pair of (input, output) streams.
 
         These stream objects are thread-aware and safe to use in separate threads.
         """
         shared_q = queue.Queue()
         return (
-            _InputStream(self, options, shared_q),
+            _InputStream(self, options, shared_q, voice_engine),
             _OutputStream(shared_q)
         )
 
@@ -193,11 +207,11 @@ class _InputStream:
        input_stream += 'Add another sentence to the stream.'
        input_stream.done()
     """
-    def __init__(self, client: Client, options: TTSOptions, q: queue.Queue[bytes | None]):
+    def __init__(self, client: Client, options: TTSOptions, q: queue.Queue[bytes | None], voice_engine: str | None):
         self._input = TextStream()
 
         def listen():
-            for output in client.stream_tts_input(self._input, options):
+            for output in client.stream_tts_input(self._input, options, voice_engine):
                 q.put(output)
             q.put(None)
 
