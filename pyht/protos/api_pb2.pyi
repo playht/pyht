@@ -7,7 +7,7 @@ from typing import ClassVar as _ClassVar, Iterable as _Iterable, Mapping as _Map
 DESCRIPTOR: _descriptor.FileDescriptor
 
 class Code(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
-    __slots__ = []
+    __slots__ = ()
     CODE_UNSPECIFIED: _ClassVar[Code]
     CODE_COMPLETE: _ClassVar[Code]
     CODE_IN_PROGRESS: _ClassVar[Code]
@@ -15,7 +15,7 @@ class Code(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     CODE_ERROR: _ClassVar[Code]
 
 class Quality(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
-    __slots__ = []
+    __slots__ = ()
     QUALITY_UNSPECIFIED: _ClassVar[Quality]
     QUALITY_LOW: _ClassVar[Quality]
     QUALITY_DRAFT: _ClassVar[Quality]
@@ -24,7 +24,7 @@ class Quality(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     QUALITY_PREMIUM: _ClassVar[Quality]
 
 class Format(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
-    __slots__ = []
+    __slots__ = ()
     FORMAT_RAW: _ClassVar[Format]
     FORMAT_MP3: _ClassVar[Format]
     FORMAT_WAV: _ClassVar[Format]
@@ -50,7 +50,7 @@ FORMAT_FLAC: Format
 FORMAT_MULAW: Format
 
 class TtsRequest(_message.Message):
-    __slots__ = ["lease", "params"]
+    __slots__ = ("lease", "params")
     LEASE_FIELD_NUMBER: _ClassVar[int]
     PARAMS_FIELD_NUMBER: _ClassVar[int]
     lease: bytes
@@ -58,7 +58,7 @@ class TtsRequest(_message.Message):
     def __init__(self, lease: _Optional[bytes] = ..., params: _Optional[_Union[TtsParams, _Mapping]] = ...) -> None: ...
 
 class TtsResponse(_message.Message):
-    __slots__ = ["sequence", "id", "data", "status"]
+    __slots__ = ("sequence", "id", "data", "status")
     SEQUENCE_FIELD_NUMBER: _ClassVar[int]
     ID_FIELD_NUMBER: _ClassVar[int]
     DATA_FIELD_NUMBER: _ClassVar[int]
@@ -70,7 +70,7 @@ class TtsResponse(_message.Message):
     def __init__(self, sequence: _Optional[int] = ..., id: _Optional[str] = ..., data: _Optional[bytes] = ..., status: _Optional[_Union[Status, _Mapping]] = ...) -> None: ...
 
 class TtsParams(_message.Message):
-    __slots__ = ["text", "voice", "quality", "format", "sample_rate", "speed", "seed", "temperature", "top_p", "other"]
+    __slots__ = ("text", "voice", "quality", "format", "sample_rate", "speed", "seed", "temperature", "top_p", "voice_guidance", "text_guidance", "other")
     TEXT_FIELD_NUMBER: _ClassVar[int]
     VOICE_FIELD_NUMBER: _ClassVar[int]
     QUALITY_FIELD_NUMBER: _ClassVar[int]
@@ -80,6 +80,8 @@ class TtsParams(_message.Message):
     SEED_FIELD_NUMBER: _ClassVar[int]
     TEMPERATURE_FIELD_NUMBER: _ClassVar[int]
     TOP_P_FIELD_NUMBER: _ClassVar[int]
+    VOICE_GUIDANCE_FIELD_NUMBER: _ClassVar[int]
+    TEXT_GUIDANCE_FIELD_NUMBER: _ClassVar[int]
     OTHER_FIELD_NUMBER: _ClassVar[int]
     text: _containers.RepeatedScalarFieldContainer[str]
     voice: str
@@ -90,11 +92,13 @@ class TtsParams(_message.Message):
     seed: int
     temperature: float
     top_p: float
+    voice_guidance: float
+    text_guidance: float
     other: str
-    def __init__(self, text: _Optional[_Iterable[str]] = ..., voice: _Optional[str] = ..., quality: _Optional[_Union[Quality, str]] = ..., format: _Optional[_Union[Format, str]] = ..., sample_rate: _Optional[int] = ..., speed: _Optional[float] = ..., seed: _Optional[int] = ..., temperature: _Optional[float] = ..., top_p: _Optional[float] = ..., other: _Optional[str] = ...) -> None: ...
+    def __init__(self, text: _Optional[_Iterable[str]] = ..., voice: _Optional[str] = ..., quality: _Optional[_Union[Quality, str]] = ..., format: _Optional[_Union[Format, str]] = ..., sample_rate: _Optional[int] = ..., speed: _Optional[float] = ..., seed: _Optional[int] = ..., temperature: _Optional[float] = ..., top_p: _Optional[float] = ..., voice_guidance: _Optional[float] = ..., text_guidance: _Optional[float] = ..., other: _Optional[str] = ...) -> None: ...
 
 class Status(_message.Message):
-    __slots__ = ["code", "message"]
+    __slots__ = ("code", "message")
     CODE_FIELD_NUMBER: _ClassVar[int]
     MESSAGE_FIELD_NUMBER: _ClassVar[int]
     code: Code

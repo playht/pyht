@@ -146,6 +146,11 @@ class AsyncClient:
             sample_rate=options.sample_rate,
             speed=options.speed,
         )
+        # If the guidances are unset, let the proto fallback to default.
+        if options.text_guidance is not None:
+            params.text_guidance = options.text_guidance
+        if options.voice_guidance is not None:
+            params.voice_guidance = options.voice_guidance
         request = api_pb2.TtsRequest(params=params, lease=lease_data)
         stub = api_pb2_grpc.TtsStub(self._rpc[1])
         stream: TtsUnaryStream = stub.Tts(request)

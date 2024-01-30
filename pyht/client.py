@@ -25,6 +25,8 @@ class TTSOptions:
     temperature: float = 0.5
     top_p: float = 0.5
     speed: float = 1.0
+    text_guidance: float | None = None
+    voice_guidance: float | None = None
 
 
 class Client:
@@ -144,6 +146,11 @@ class Client:
             sample_rate=options.sample_rate,
             speed=options.speed,
         )
+        # If the guidances are unset, let the proto fallback to default.
+        if options.text_guidance is not None:
+            params.text_guidance = options.text_guidance
+        if options.voice_guidance is not None:
+            params.voice_guidance = options.voice_guidance
         request = api_pb2.TtsRequest(params=params, lease=lease_data)
         stub = api_pb2_grpc.TtsStub(self._rpc[1])
         response = stub.Tts(request)  # type: Iterable[api_pb2.TtsResponse]
