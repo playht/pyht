@@ -42,6 +42,10 @@ message TtsParams {
   // Model probability mass sampling threshold, 1.0 (disabled) is default.
   optional float top_p = 9;
 
+  optional float voice_guidance = 11;
+
+  optional float text_guidance = 16;
+
   // JSON string with other various parameters.
   optional string other = 99;
 }
