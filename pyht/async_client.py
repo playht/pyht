@@ -130,28 +130,7 @@ class AsyncClient:
             text = [normalize(x) for x in text]
         text = ensure_sentence_end(text)
 
-        quality = options.quality.lower()
-        _quality = api_pb2.QUALITY_DRAFT
-
-        if voice_engine == "PlayHT2.0" and quality != "faster":
-            _quality = api_pb2.QUALITY_MEDIUM
-
-        params = api_pb2.TtsParams(
-            text=text,
-            voice=options.voice,
-            format=options.format,
-            quality=_quality,
-            temperature=options.temperature,
-            top_p=options.top_p,
-            sample_rate=options.sample_rate,
-            speed=options.speed,
-        )
-        # If the guidances are unset, let the proto fallback to default.
-        if options.text_guidance is not None:
-            params.text_guidance = options.text_guidance
-        if options.voice_guidance is not None:
-            params.voice_guidance = options.voice_guidance
-        request = api_pb2.TtsRequest(params=params, lease=lease_data)
+        request = api_pb2.TtsRequest(params=options.tts_params(text, voice_engine), lease=lease_data)
         stub = api_pb2_grpc.TtsStub(self._rpc[1])
         stream: TtsUnaryStream = stub.Tts(request)
         if context is not None:

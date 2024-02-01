@@ -22,11 +22,37 @@ class TTSOptions:
     format: Format = Format.FORMAT_WAV
     sample_rate: int = 24000
     quality: str = "faster"
-    temperature: float = 0.5
-    top_p: float = 0.5
     speed: float = 1.0
+    temperature: float | None = None
+    top_p: float | None = None
     text_guidance: float | None = None
     voice_guidance: float | None = None
+
+    def tts_params(self, text: list[str], voice_engine: str | None) -> api_pb2.TtsParams:
+        quality = self.quality.lower()
+        _quality = api_pb2.QUALITY_DRAFT
+
+        if voice_engine == "PlayHT2.0" and quality != "faster":
+            _quality = api_pb2.QUALITY_MEDIUM
+
+        params = api_pb2.TtsParams(
+            text=text,
+            voice=self.voice,
+            format=self.format,
+            quality=_quality,
+            sample_rate=self.sample_rate,
+            speed=self.speed,
+        )
+        # If the hyperparams are unset, let the proto fallback to default.
+        if self.temperature is not None:
+            params.temperature = self.temperature
+        if self.top_p is not None:
+            params.top_p = self.top_p
+        if self.text_guidance is not None:
+            params.text_guidance = self.text_guidance
+        if self.voice_guidance is not None:
+            params.voice_guidance = self.voice_guidance
+        return params
 
 
 class Client:
@@ -130,28 +156,7 @@ class Client:
             text = [normalize(x) for x in text]
         text = ensure_sentence_end(text)
 
-        quality = options.quality.lower()
-        _quality = api_pb2.QUALITY_DRAFT
-
-        if voice_engine == "PlayHT2.0" and quality != "faster":
-            _quality = api_pb2.QUALITY_MEDIUM
-
-        params = api_pb2.TtsParams(
-            text=text,
-            voice=options.voice,
-            format=options.format,
-            quality=_quality,
-            temperature=options.temperature,
-            top_p=options.top_p,
-            sample_rate=options.sample_rate,
-            speed=options.speed,
-        )
-        # If the guidances are unset, let the proto fallback to default.
-        if options.text_guidance is not None:
-            params.text_guidance = options.text_guidance
-        if options.voice_guidance is not None:
-            params.voice_guidance = options.voice_guidance
-        request = api_pb2.TtsRequest(params=params, lease=lease_data)
+        request = api_pb2.TtsRequest(params=options.tts_params(text, voice_engine), lease=lease_data)
         stub = api_pb2_grpc.TtsStub(self._rpc[1])
         response = stub.Tts(request)  # type: Iterable[api_pb2.TtsResponse]
         for item in response:
