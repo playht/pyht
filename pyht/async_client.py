@@ -99,7 +99,7 @@ class AsyncClient:
 
             if self._advanced.on_prem_endpoint and self._advanced.on_prem_fallback and grpc_addr != fallback_addr:
                 if self._fallback_rpc and self._fallback_rpc[0] != fallback_addr:
-                    self._fallback_rpc[1].close()
+                    await self._fallback_rpc[1].close()
                     self._fallback_rpc = None
                 if not self._fallback_rpc:
                     channel = (
