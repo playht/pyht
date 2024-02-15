@@ -64,7 +64,7 @@ class Client:
         insecure: bool = False
         auto_refresh_lease: bool = True
         on_prem_endpoint: str | None = None
-        on_prem_fallback: bool = False
+        on_prem_fallback: bool = True
 
     def __init__(
         self,
@@ -183,7 +183,8 @@ class Client:
             for item in response:
                 yield item.data
         except grpc.RpcError as e:
-            if (e.code() == grpc.StatusCode.RESOURCE_EXHAUSTED or e.code() == grpc.StatusCode.UNAVAILABLE) and self._fallback_rpc:
+            error_code = getattr(e, "code")()
+            if (error_code is grpc.StatusCode.RESOURCE_EXHAUSTED or error_code is grpc.StatusCode.UNAVAILABLE) and self._fallback_rpc:
                 stub = api_pb2_grpc.TtsStub(self._fallback_rpc[1])
                 response = stub.Tts(request)  # type: Iterable[api_pb2.TtsResponse]
                 for item in response:
