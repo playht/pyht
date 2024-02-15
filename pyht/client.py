@@ -8,6 +8,7 @@ import io
 import queue
 import threading
 
+import grpc
 from grpc import Channel, insecure_channel, secure_channel, ssl_channel_credentials
 
 from .lease import Lease, LeaseFactory
@@ -62,6 +63,8 @@ class Client:
         grpc_addr: str | None = None
         insecure: bool = False
         auto_refresh_lease: bool = True
+        on_prem_endpoint: str | None = None
+        on_prem_fallback: bool = False
 
     def __init__(
         self,
@@ -78,6 +81,7 @@ class Client:
         self._lease_factory = LeaseFactory(user_id, api_key, self._advanced.api_url)
         self._lease: Lease | None = None
         self._rpc: Tuple[str, Channel] | None = None
+        self._fallback_rpc: Tuple[str, Channel] | None = None
         self._lock = threading.Lock()
         self._timer: threading.Timer | None = None
         if auto_connect:
@@ -102,17 +106,33 @@ class Client:
                     self._schedule_refresh()
                 return
             self._lease = self._lease_factory()
-            grpc_addr = self._advanced.grpc_addr or self._lease.metadata["inference_address"]
+
+            grpc_addr = self._advanced.on_prem_endpoint or self._advanced.grpc_addr or self._lease.metadata["inference_address"]
+            fallback_addr = self._lease.metadata["inference_address"]
+
             if self._rpc and self._rpc[0] != grpc_addr:
                 self._rpc[1].close()
                 self._rpc = None
             if not self._rpc:
                 channel = (
                     insecure_channel(grpc_addr)
-                    if self._advanced.insecure
+                    if self._advanced.on_prem_endpoint or self._advanced.insecure
                     else secure_channel(grpc_addr, ssl_channel_credentials())
                 )
                 self._rpc = (grpc_addr, channel)
+
+            if self._advanced.on_prem_endpoint and self._advanced.on_prem_fallback and grpc_addr != fallback_addr:
+                if self._fallback_rpc and self._fallback_rpc[0] != fallback_addr:
+                    self._fallback_rpc[1].close()
+                    self._fallback_rpc = None
+                if not self._fallback_rpc:
+                    channel = (
+                        insecure_channel(fallback_addr)
+                        if self._advanced.insecure
+                        else secure_channel(fallback_addr, ssl_channel_credentials())
+                    )
+                    self._fallback_rpc = (fallback_addr, channel)
+
             if self._timer:
                 self._timer.cancel()
 
@@ -157,10 +177,20 @@ class Client:
         text = ensure_sentence_end(text)
 
         request = api_pb2.TtsRequest(params=options.tts_params(text, voice_engine), lease=lease_data)
-        stub = api_pb2_grpc.TtsStub(self._rpc[1])
-        response = stub.Tts(request)  # type: Iterable[api_pb2.TtsResponse]
-        for item in response:
-            yield item.data
+        try:
+            stub = api_pb2_grpc.TtsStub(self._rpc[1])
+            response = stub.Tts(request)  # type: Iterable[api_pb2.TtsResponse]
+            for item in response:
+                yield item.data
+        except grpc.RpcError as e:
+            if (e.code() == grpc.StatusCode.RESOURCE_EXHAUSTED or e.code() == grpc.StatusCode.UNAVAILABLE) and self._fallback_rpc:
+                stub = api_pb2_grpc.TtsStub(self._fallback_rpc[1])
+                response = stub.Tts(request)  # type: Iterable[api_pb2.TtsResponse]
+                for item in response:
+                    yield item.data
+            else:
+                raise
+
 
     def get_stream_pair(
         self,
@@ -184,6 +214,9 @@ class Client:
         if self._rpc:
             self._rpc[1].close()
             self._rpc = None
+        if self._fallback_rpc:
+            self._fallback_rpc[1].close()
+            self._fallback_rpc = None
 
     def __del__(self):
         self.close()
