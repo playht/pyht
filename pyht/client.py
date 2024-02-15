@@ -107,7 +107,11 @@ class Client:
                 return
             self._lease = self._lease_factory()
 
-            grpc_addr = self._advanced.on_prem_endpoint or self._advanced.grpc_addr or self._lease.metadata["inference_address"]
+            grpc_addr = (
+                    self._advanced.on_prem_endpoint
+                    or self._advanced.grpc_addr
+                    or self._lease.metadata["inference_address"]
+            )
             fallback_addr = self._lease.metadata["inference_address"]
 
             if self._rpc and self._rpc[0] != grpc_addr:
@@ -184,14 +188,17 @@ class Client:
                 yield item.data
         except grpc.RpcError as e:
             error_code = getattr(e, "code")()
-            if (error_code is grpc.StatusCode.RESOURCE_EXHAUSTED or error_code is grpc.StatusCode.UNAVAILABLE) and self._fallback_rpc:
+            should_fallback = (
+                    error_code is grpc.StatusCode.RESOURCE_EXHAUSTED
+                    or error_code is grpc.StatusCode.UNAVAILABLE
+            )
+            if should_fallback and self._fallback_rpc:
                 stub = api_pb2_grpc.TtsStub(self._fallback_rpc[1])
                 response = stub.Tts(request)  # type: Iterable[api_pb2.TtsResponse]
                 for item in response:
                     yield item.data
             else:
                 raise
-
 
     def get_stream_pair(
         self,

@@ -158,7 +158,11 @@ class AsyncClient:
                 yield response.data
         except grpc.RpcError as e:
             error_code = getattr(e, "code")()
-            if (error_code is grpc.StatusCode.RESOURCE_EXHAUSTED or error_code is grpc.StatusCode.UNAVAILABLE) and self._fallback_rpc:
+            should_fallback = (
+                    error_code is grpc.StatusCode.RESOURCE_EXHAUSTED
+                    or error_code is grpc.StatusCode.UNAVAILABLE
+            )
+            if should_fallback and self._fallback_rpc:
                 stub = api_pb2_grpc.TtsStub(self._fallback_rpc[1])
                 stream: TtsUnaryStream = stub.Tts(request)
                 if context is not None:
