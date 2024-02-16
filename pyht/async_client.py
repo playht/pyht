@@ -7,8 +7,9 @@ from datetime import datetime, timedelta
 import io
 import sys
 
+import grpc
 from grpc.aio import Channel, Call, insecure_channel, secure_channel, UnaryStreamCall
-from grpc import ssl_channel_credentials
+from grpc import ssl_channel_credentials, StatusCode
 
 
 from .client import TTSOptions
@@ -40,6 +41,7 @@ class AsyncClient:
         api_url: str = "https://api.play.ht/api"
         grpc_addr: str | None = None
         insecure: bool = False
+        fallback_enabled: bool = False
         auto_refresh_lease: bool = True
 
     def __init__(
@@ -56,6 +58,7 @@ class AsyncClient:
         self._lease_factory = LeaseFactory(user_id, api_key, self._advanced.api_url)
         self._lease: Lease | None = None
         self._rpc: tuple[str, Channel] | None = None
+        self._fallback_rpc: tuple[str, Channel] | None = None
         self._lock = asyncio.Lock()
         self._stop_lease_loop = asyncio.Event()
         if self._advanced.auto_refresh_lease:
@@ -79,16 +82,37 @@ class AsyncClient:
                 # Lease is still valid for at least the next 5 minutes.
                 return
             self._lease = await to_thread(self._lease_factory)
+
             grpc_addr = self._advanced.grpc_addr or self._lease.metadata["inference_address"]
+
             if self._rpc and self._rpc[0] != grpc_addr:
                 await self._rpc[1].close()
                 self._rpc = None
             if self._rpc is None:
+                insecure = self._advanced.insecure or "on-prem.play.ht" in grpc_addr
                 channel = (
-                    insecure_channel(grpc_addr) if self._advanced.insecure
+                    insecure_channel(grpc_addr) if insecure
                     else secure_channel(grpc_addr, ssl_channel_credentials())
                 )
                 self._rpc = (grpc_addr, channel)
+
+            # Maybe set up a fallback grpc client
+            if self._advanced.fallback_enabled:
+                # Choose the fallback address
+                # For now, this always is the inference address in the lease, but we can extend in the future
+                fallback_addr = self._lease.metadata["inference_address"]
+
+                # Only do fallback if the fallback address is not the same as the primary address
+                if grpc_addr != fallback_addr:
+                    if self._fallback_rpc and self._fallback_rpc[0] != fallback_addr:
+                        await self._fallback_rpc[1].close()
+                        self._fallback_rpc = None
+                    if self._fallback_rpc is None:
+                        channel = (
+                            insecure_channel(fallback_addr) if self._advanced.insecure
+                            else secure_channel(fallback_addr, ssl_channel_credentials())
+                        )
+                        self._fallback_rpc = (fallback_addr, channel)
 
     async def stream_tts_input(
         self,
@@ -131,12 +155,26 @@ class AsyncClient:
         text = ensure_sentence_end(text)
 
         request = api_pb2.TtsRequest(params=options.tts_params(text, voice_engine), lease=lease_data)
-        stub = api_pb2_grpc.TtsStub(self._rpc[1])
-        stream: TtsUnaryStream = stub.Tts(request)
-        if context is not None:
-            context.assign(stream)
-        async for response in stream:
-            yield response.data
+        try:
+            stub = api_pb2_grpc.TtsStub(self._rpc[1])
+            stream: TtsUnaryStream = stub.Tts(request)
+            if context is not None:
+                context.assign(stream)
+            async for response in stream:
+                yield response.data
+        except grpc.RpcError as e:
+            error_code = getattr(e, "code")()
+            if error_code not in {StatusCode.RESOURCE_EXHAUSTED, StatusCode.UNAVAILABLE} or self._fallback_rpc is None:
+                raise
+            try:
+                stub = api_pb2_grpc.TtsStub(self._fallback_rpc[1])
+                stream: TtsUnaryStream = stub.Tts(request)
+                if context is not None:
+                    context.assign(stream)
+                async for response in stream:
+                    yield response.data
+            except grpc.RpcError as fallback_e:
+                raise fallback_e from e
 
     def get_stream_pair(
         self,
@@ -161,6 +199,9 @@ class AsyncClient:
         if self._rpc is not None:
             await self._rpc[1].close()
             self._rpc = None
+        if self._fallback_rpc is not None:
+            await self._fallback_rpc[1].close()
+            self._fallback_rpc = None
 
     def __del__(self):
         try:
