@@ -9,7 +9,7 @@ import queue
 import threading
 
 import grpc
-from grpc import Channel, insecure_channel, secure_channel, ssl_channel_credentials
+from grpc import Channel, insecure_channel, secure_channel, ssl_channel_credentials, StatusCode
 
 from .lease import Lease, LeaseFactory
 from .protos import api_pb2, api_pb2_grpc
@@ -183,15 +183,16 @@ class Client:
                 yield item.data
         except grpc.RpcError as e:
             error_code = getattr(e, "code")()
-            should_fallback = (
-                    error_code is grpc.StatusCode.RESOURCE_EXHAUSTED
-                    or error_code is grpc.StatusCode.UNAVAILABLE
-            )
-            if should_fallback and self._fallback_rpc:
-                stub = api_pb2_grpc.TtsStub(self._fallback_rpc[1])
-                response = stub.Tts(request)  # type: Iterable[api_pb2.TtsResponse]
-                for item in response:
-                    yield item.data
+            if error_code not in {StatusCode.RESOURCE_EXHAUSTED, StatusCode.UNAVAILABLE} or self._fallback_rpc is None:
+                raise
+            if self._fallback_rpc is not None:
+                try:
+                    stub = api_pb2_grpc.TtsStub(self._fallback_rpc[1])
+                    response = stub.Tts(request)  # type: Iterable[api_pb2.TtsResponse]
+                    for item in response:
+                        yield item.data
+                except grpc.RpcError as fallback_e:
+                    raise fallback_e from e
             else:
                 raise
 

@@ -9,7 +9,7 @@ import sys
 
 import grpc
 from grpc.aio import Channel, Call, insecure_channel, secure_channel, UnaryStreamCall
-from grpc import ssl_channel_credentials
+from grpc import ssl_channel_credentials, StatusCode
 
 
 from .client import TTSOptions
@@ -102,7 +102,7 @@ class AsyncClient:
                     if self._fallback_rpc and self._fallback_rpc[0] != fallback_addr:
                         await self._fallback_rpc[1].close()
                         self._fallback_rpc = None
-                    if not self._fallback_rpc:
+                    if self._fallback_rpc is None:
                         channel = (
                             insecure_channel(fallback_addr) if self._advanced.insecure
                             else secure_channel(fallback_addr, ssl_channel_credentials())
@@ -159,17 +159,18 @@ class AsyncClient:
                 yield response.data
         except grpc.RpcError as e:
             error_code = getattr(e, "code")()
-            should_fallback = (
-                    error_code is grpc.StatusCode.RESOURCE_EXHAUSTED
-                    or error_code is grpc.StatusCode.UNAVAILABLE
-            )
-            if should_fallback and self._fallback_rpc:
-                stub = api_pb2_grpc.TtsStub(self._fallback_rpc[1])
-                stream: TtsUnaryStream = stub.Tts(request)
-                if context is not None:
-                    context.assign(stream)
-                async for response in stream:
-                    yield response.data
+            if error_code not in {StatusCode.RESOURCE_EXHAUSTED, StatusCode.UNAVAILABLE} or self._fallback_rpc is None:
+                raise
+            if self._fallback_rpc is not None:
+                try:
+                    stub = api_pb2_grpc.TtsStub(self._fallback_rpc[1])
+                    stream: TtsUnaryStream = stub.Tts(request)
+                    if context is not None:
+                        context.assign(stream)
+                    async for response in stream:
+                        yield response.data
+                except grpc.RpcError as fallback_e:
+                    raise fallback_e from e
             else:
                 raise
 
