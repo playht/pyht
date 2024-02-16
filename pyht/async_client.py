@@ -166,18 +166,15 @@ class AsyncClient:
             error_code = getattr(e, "code")()
             if error_code not in {StatusCode.RESOURCE_EXHAUSTED, StatusCode.UNAVAILABLE} or self._fallback_rpc is None:
                 raise
-            if self._fallback_rpc is not None:
-                try:
-                    stub = api_pb2_grpc.TtsStub(self._fallback_rpc[1])
-                    stream: TtsUnaryStream = stub.Tts(request)
-                    if context is not None:
-                        context.assign(stream)
-                    async for response in stream:
-                        yield response.data
-                except grpc.RpcError as fallback_e:
-                    raise fallback_e from e
-            else:
-                raise
+            try:
+                stub = api_pb2_grpc.TtsStub(self._fallback_rpc[1])
+                stream: TtsUnaryStream = stub.Tts(request)
+                if context is not None:
+                    context.assign(stream)
+                async for response in stream:
+                    yield response.data
+            except grpc.RpcError as fallback_e:
+                raise fallback_e from e
 
     def get_stream_pair(
         self,
