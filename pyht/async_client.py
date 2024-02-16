@@ -96,8 +96,13 @@ class AsyncClient:
                 )
                 self._rpc = (grpc_addr, channel)
 
+            # Maybe set up a fallback grpc client
             if self._advanced.fallback_enabled:
+                # Choose the fallback address
+                # For now, this always is the inference address in the lease, but we can extend in the future
                 fallback_addr = self._lease.metadata["inference_address"]
+
+                # Only do fallback if the fallback address is not the same as the primary address
                 if grpc_addr != fallback_addr:
                     if self._fallback_rpc and self._fallback_rpc[0] != fallback_addr:
                         await self._fallback_rpc[1].close()
