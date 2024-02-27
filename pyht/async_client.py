@@ -66,13 +66,13 @@ class AsyncClient:
         async def lease_factory() -> Lease:
             _factory = LeaseFactory(user_id, api_key, self._advanced.api_url)
             if self._advanced.disable_lease_disk_cache:
-                return _factory()
+                return await asyncio.to_thread(_factory)
             maybe_data = await self._lease_cache_read()
             if maybe_data is not None:
                 lease = Lease(maybe_data)
                 if lease.expires > datetime.now() + timedelta(minutes=5):
                     return lease
-            lease = _factory()
+            lease = await asyncio.to_thread(_factory)
             await self._lease_cache_write(lease.data)
             return lease
 
