@@ -5,9 +5,12 @@ from typing import Generator, Iterable, Iterator, List, Tuple
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import io
+import os
 import queue
+import tempfile
 import threading
 
+import filelock
 import grpc
 from grpc import Channel, insecure_channel, secure_channel, ssl_channel_credentials, StatusCode
 
@@ -57,6 +60,10 @@ class TTSOptions:
 
 
 class Client:
+    LEASE_DATA: bytes | None = None
+    LEASE_CACHE_PATH: str = os.path.join(tempfile.gettempdir(), 'playht.temporary.lease')
+    LEASE_LOCK = threading.Lock()
+
     @dataclass
     class AdvancedOptions:
         api_url: str = "https://api.play.ht/api"
@@ -64,6 +71,7 @@ class Client:
         insecure: bool = False
         fallback_enabled: bool = False
         auto_refresh_lease: bool = True
+        disable_lease_disk_cache: bool = False
 
     def __init__(
         self,
@@ -77,7 +85,20 @@ class Client:
 
         self._advanced = advanced or self.AdvancedOptions()
 
-        self._lease_factory = LeaseFactory(user_id, api_key, self._advanced.api_url)
+        def lease_factory() -> Lease:
+            _factory = LeaseFactory(user_id, api_key, self._advanced.api_url)
+            if self._advanced.disable_lease_disk_cache:
+                return _factory()
+            maybe_data = self._lease_cache_read()
+            if maybe_data is not None:
+                lease = Lease(maybe_data)
+                if lease.expires > datetime.now() + timedelta(minutes=5):
+                    return lease
+            lease = _factory()
+            self._lease_cache_write(lease.data)
+            return lease
+
+        self._lease_factory = lease_factory
         self._lease: Lease | None = None
         self._rpc: Tuple[str, Channel] | None = None
         self._fallback_rpc: Tuple[str, Channel] | None = None
@@ -85,6 +106,31 @@ class Client:
         self._timer: threading.Timer | None = None
         if auto_connect:
             self.refresh_lease()
+
+    @classmethod
+    def _lease_cache_read(cls) -> bytes | None:
+        with cls.LEASE_LOCK:
+            if cls.LEASE_DATA is not None:
+                return cls.LEASE_DATA
+            try:
+                with filelock.FileLock(cls.LEASE_CACHE_PATH + '.lock'):
+                    if not os.path.exists(cls.LEASE_CACHE_PATH):
+                        return None
+                    with open(cls.LEASE_CACHE_PATH, 'rb') as fp:
+                        return fp.read()
+            except IOError:
+                return None
+
+    @classmethod
+    def _lease_cache_write(cls, data: bytes):
+        with cls.LEASE_LOCK:
+            cls.LEASE_DATA = data
+            try:
+                with filelock.FileLock(cls.LEASE_CACHE_PATH + '.lock'):
+                    with open(cls.LEASE_CACHE_PATH, 'wb') as fp:
+                        fp.write(data)
+            except IOError:
+                return
 
     def _schedule_refresh(self):
         assert self._lock.locked

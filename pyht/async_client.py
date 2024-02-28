@@ -5,8 +5,11 @@ import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import io
+import os
 import sys
+import tempfile
 
+import filelock
 import grpc
 from grpc.aio import Channel, Call, insecure_channel, secure_channel, UnaryStreamCall
 from grpc import ssl_channel_credentials, StatusCode
@@ -36,6 +39,10 @@ else:
 
 
 class AsyncClient:
+    LEASE_DATA: bytes | None = None
+    LEASE_CACHE_PATH: str = os.path.join(tempfile.gettempdir(), 'playht.temporary.lease')
+    LEASE_LOCK = asyncio.Lock()
+
     @dataclass
     class AdvancedOptions:
         api_url: str = "https://api.play.ht/api"
@@ -43,6 +50,7 @@ class AsyncClient:
         insecure: bool = False
         fallback_enabled: bool = False
         auto_refresh_lease: bool = True
+        disable_lease_disk_cache: bool = False
 
     def __init__(
         self,
@@ -55,7 +63,20 @@ class AsyncClient:
         assert api_key, "api_key is required"
         self._advanced = advanced or self.AdvancedOptions()
 
-        self._lease_factory = LeaseFactory(user_id, api_key, self._advanced.api_url)
+        async def lease_factory() -> Lease:
+            _factory = LeaseFactory(user_id, api_key, self._advanced.api_url)
+            if self._advanced.disable_lease_disk_cache:
+                return await asyncio.to_thread(_factory)
+            maybe_data = await self._lease_cache_read()
+            if maybe_data is not None:
+                lease = Lease(maybe_data)
+                if lease.expires > datetime.now() + timedelta(minutes=5):
+                    return lease
+            lease = await asyncio.to_thread(_factory)
+            await self._lease_cache_write(lease.data)
+            return lease
+
+        self._lease_factory = lease_factory
         self._lease: Lease | None = None
         self._rpc: tuple[str, Channel] | None = None
         self._fallback_rpc: tuple[str, Channel] | None = None
@@ -69,6 +90,37 @@ class AsyncClient:
         if auto_connect and not self._advanced.auto_refresh_lease:
             asyncio.ensure_future(self.refresh_lease())
 
+    @classmethod
+    async def _lease_cache_read(cls) -> bytes | None:
+        def get_file():
+            try:
+                with filelock.FileLock(cls.LEASE_CACHE_PATH + '.lock'):
+                    if not os.path.exists(cls.LEASE_CACHE_PATH):
+                        return None
+                    with open(cls.LEASE_CACHE_PATH, 'rb') as fp:
+                        return fp.read()
+            except IOError:
+                return None
+
+        async with cls.LEASE_LOCK:
+            if cls.LEASE_DATA is None:
+                cls.LEASE_DATA = await asyncio.to_thread(get_file)
+            return cls.LEASE_DATA
+
+    @classmethod
+    async def _lease_cache_write(cls, data: bytes):
+        def write_file():
+            try:
+                with filelock.FileLock(cls.LEASE_CACHE_PATH + '.lock'):
+                    with open(cls.LEASE_CACHE_PATH, 'wb') as fp:
+                        fp.write(data)
+            except IOError:
+                return
+
+        async with cls.LEASE_LOCK:
+            cls.LEASE_DATA = data
+            await asyncio.to_thread(write_file)
+
     async def _lease_loop(self):
         refresh_time = timedelta(minutes=4, seconds=30)
         while not self._stop_lease_loop.is_set():
@@ -81,7 +133,7 @@ class AsyncClient:
             if self._lease and self._lease.expires > datetime.now() + timedelta(minutes=5):
                 # Lease is still valid for at least the next 5 minutes.
                 return
-            self._lease = await to_thread(self._lease_factory)
+            self._lease = await self._lease_factory()
 
             grpc_addr = self._advanced.grpc_addr or self._lease.metadata["inference_address"]
 

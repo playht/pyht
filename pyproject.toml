@@ -32,6 +32,7 @@ generate-setup-file = false
 # Be as loose as possible if writing a library.
 python = "^3.8"
 grpcio = "^1.58.0"
+filelock = "^3.12.4"
 protobuf = "^4.24.3"
 requests = "^2.31.0"
 
