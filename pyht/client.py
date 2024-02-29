@@ -271,8 +271,8 @@ class Client:
 
                 if retries < max_retries:
                     retries += 1
+                    # It's a poor customer experience to show internal details about retries, so we only debug log here.
                     logging.debug(f"Retrying in {backoff} ms ({retries} attempts so far)...  ({error_code})")
-                    print(f"Retrying in {backoff} ms ({retries} attempts so far)...  ({error_code})")
                     if backoff > 0:
                         time.sleep(backoff)
                     continue
@@ -280,8 +280,9 @@ class Client:
                 if self._fallback_rpc is None:
                     raise
 
+                # We log fallbacks to give customers an extra signal that they should scale up their on-prem appliance
+                # (e.g. by paying for more GPU quota)
                 logging.info(f"Falling back to {self._fallback_rpc[0]}... ({error_code})")
-                print(f"Falling back to {self._fallback_rpc[0]}... ({error_code})")
                 try:
                     stub = api_pb2_grpc.TtsStub(self._fallback_rpc[1])
                     response = stub.Tts(request)  # type: Iterable[api_pb2.TtsResponse]
