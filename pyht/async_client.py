@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+import logging
 from typing import Any, AsyncGenerator, AsyncIterable, AsyncIterator, Coroutine
 
 import asyncio
@@ -15,7 +17,7 @@ from grpc.aio import Channel, Call, insecure_channel, secure_channel, UnaryStrea
 from grpc import ssl_channel_credentials, StatusCode
 
 
-from .client import TTSOptions
+from .client import TTSOptions, CongestionCtrl
 from .lease import Lease, LeaseFactory
 from .protos import api_pb2, api_pb2_grpc
 from .utils import ensure_sentence_end, normalize, split_text, SENTENCE_END_REGEX
@@ -51,6 +53,7 @@ class AsyncClient:
         fallback_enabled: bool = False
         auto_refresh_lease: bool = True
         disable_lease_disk_cache: bool = False
+        congestion_ctrl: CongestionCtrl = CongestionCtrl.OFF
 
     def __init__(
         self,
@@ -207,26 +210,49 @@ class AsyncClient:
         text = ensure_sentence_end(text)
 
         request = api_pb2.TtsRequest(params=options.tts_params(text, voice_engine), lease=lease_data)
-        try:
-            stub = api_pb2_grpc.TtsStub(self._rpc[1])
-            stream: TtsUnaryStream = stub.Tts(request)
-            if context is not None:
-                context.assign(stream)
-            async for response in stream:
-                yield response.data
-        except grpc.RpcError as e:
-            error_code = getattr(e, "code")()
-            if error_code not in {StatusCode.RESOURCE_EXHAUSTED, StatusCode.UNAVAILABLE} or self._fallback_rpc is None:
-                raise
+
+        retries = 0
+        max_retries = 0
+        backoff = 0
+        if self._advanced.congestion_ctrl == CongestionCtrl.STATIC_MAR_2023:
+            max_retries = 2
+            backoff = 0.05
+
+        while True:
             try:
-                stub = api_pb2_grpc.TtsStub(self._fallback_rpc[1])
+                stub = api_pb2_grpc.TtsStub(self._rpc[1])
                 stream: TtsUnaryStream = stub.Tts(request)
                 if context is not None:
                     context.assign(stream)
                 async for response in stream:
                     yield response.data
-            except grpc.RpcError as fallback_e:
-                raise fallback_e from e
+            except grpc.RpcError as e:
+                error_code = getattr(e, "code")()
+                logging.debug(f"Error: {error_code}")
+                if error_code not in {StatusCode.RESOURCE_EXHAUSTED, StatusCode.UNAVAILABLE}:
+                    raise
+
+                if retries < max_retries:
+                    retries += 1
+                    logging.debug(f"Retrying in {backoff} ms ({retries} attempts so far)... ({error_code})")
+                    if backoff > 0:
+                        await asyncio.sleep(backoff)
+                    continue
+
+                if self._fallback_rpc is None:
+                    raise
+
+                logging.info(f"Falling back to {self._fallback_rpc[0]}... ({error_code})")
+                try:
+                    stub = api_pb2_grpc.TtsStub(self._fallback_rpc[1])
+                    stream: TtsUnaryStream = stub.Tts(request)
+                    if context is not None:
+                        context.assign(stream)
+                    async for response in stream:
+                        yield response.data
+                    break
+                except grpc.RpcError as fallback_e:
+                    raise fallback_e from e
 
     def get_stream_pair(
         self,

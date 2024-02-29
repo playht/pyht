@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import logging
+import time
+from enum import Enum
 from typing import Generator, Iterable, Iterator, List, Tuple
 
 from dataclasses import dataclass
@@ -59,6 +62,19 @@ class TTSOptions:
         return params
 
 
+class CongestionCtrl(Enum):
+    """
+    Enumerates a streaming congestion control algorithms, used to optimize the rate at which text is sent to PlayHT.
+    """
+
+    # The client will not do any congestion control.  Text will be sent to PlayHT as fast as possible.
+    OFF = 0
+
+    # The client will optimize for minimizing the number of physical resources required to handle a single stream.
+    # If you're using PlayHT On-Prem, you should use this {@link CongestionCtrl} algorithm.
+    STATIC_MAR_2023 = 1
+
+
 class Client:
     LEASE_DATA: bytes | None = None
     LEASE_CACHE_PATH: str = os.path.join(tempfile.gettempdir(), 'playht.temporary.lease')
@@ -72,6 +88,7 @@ class Client:
         fallback_enabled: bool = False
         auto_refresh_lease: bool = True
         disable_lease_disk_cache: bool = False
+        congestion_ctrl: CongestionCtrl = CongestionCtrl.OFF
 
     def __init__(
         self,
@@ -227,22 +244,48 @@ class Client:
         text = ensure_sentence_end(text)
 
         request = api_pb2.TtsRequest(params=options.tts_params(text, voice_engine), lease=lease_data)
-        try:
-            stub = api_pb2_grpc.TtsStub(self._rpc[1])
-            response = stub.Tts(request)  # type: Iterable[api_pb2.TtsResponse]
-            for item in response:
-                yield item.data
-        except grpc.RpcError as e:
-            error_code = getattr(e, "code")()
-            if error_code not in {StatusCode.RESOURCE_EXHAUSTED, StatusCode.UNAVAILABLE} or self._fallback_rpc is None:
-                raise
+
+        retries = 0
+        max_retries = 0
+        backoff = 0
+        if self._advanced.congestion_ctrl == CongestionCtrl.STATIC_MAR_2023:
+            max_retries = 2
+            backoff = 0.05
+
+        while True:
             try:
-                stub = api_pb2_grpc.TtsStub(self._fallback_rpc[1])
+                stub = api_pb2_grpc.TtsStub(self._rpc[1])
                 response = stub.Tts(request)  # type: Iterable[api_pb2.TtsResponse]
                 for item in response:
                     yield item.data
-            except grpc.RpcError as fallback_e:
-                raise fallback_e from e
+                break
+            except grpc.RpcError as e:
+                error_code = getattr(e, "code")()
+                logging.debug(f"Error: {error_code}")
+                if error_code not in {StatusCode.RESOURCE_EXHAUSTED, StatusCode.UNAVAILABLE}:
+                    raise
+
+                if retries < max_retries:
+                    retries += 1
+                    logging.debug(f"Retrying in {backoff} ms ({retries} attempts so far)...  ({error_code})")
+                    print(f"Retrying in {backoff} ms ({retries} attempts so far)...  ({error_code})")
+                    if backoff > 0:
+                        time.sleep(backoff)
+                    continue
+
+                if self._fallback_rpc is None:
+                    raise
+
+                logging.info(f"Falling back to {self._fallback_rpc[0]}... ({error_code})")
+                print(f"Falling back to {self._fallback_rpc[0]}... ({error_code})")
+                try:
+                    stub = api_pb2_grpc.TtsStub(self._fallback_rpc[1])
+                    response = stub.Tts(request)  # type: Iterable[api_pb2.TtsResponse]
+                    for item in response:
+                        yield item.data
+                    break
+                except grpc.RpcError as fallback_e:
+                    raise fallback_e from e
 
     def get_stream_pair(
         self,
