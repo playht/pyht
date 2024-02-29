@@ -67,11 +67,15 @@ class CongestionCtrl(Enum):
     Enumerates a streaming congestion control algorithms, used to optimize the rate at which text is sent to PlayHT.
     """
 
-    # The client will not do any congestion control.  Text will be sent to PlayHT as fast as possible.
+    # The client will not do any congestion control.
     OFF = 0
 
-    # The client will optimize for minimizing the number of physical resources required to handle a single stream.
-    # If you're using PlayHT On-Prem, you should use this {@link CongestionCtrl} algorithm.
+    # The client will retry requests to the primary address up to two times with a 50ms backoff between attempts.
+    #
+    # Then it will fall back to the fallback address (if one is configured).  No retry attempts will be made
+    # against the fallback address.
+    #
+    # If you're using PlayHT On-Prem, you should probably be using this congestion control algorithm.
     STATIC_MAR_2023 = 1
 
 
