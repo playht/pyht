@@ -249,14 +249,13 @@ class Client:
 
         request = api_pb2.TtsRequest(params=options.tts_params(text, voice_engine), lease=lease_data)
 
-        retries = 0
-        max_retries = 0
+        max_attempts = 1
         backoff = 0
         if self._advanced.congestion_ctrl == CongestionCtrl.STATIC_MAR_2023:
-            max_retries = 2
+            max_attempts = 3
             backoff = 0.05
 
-        while True:
+        for attempt in range(1, max_attempts + 1):
             try:
                 stub = api_pb2_grpc.TtsStub(self._rpc[1])
                 response = stub.Tts(request)  # type: Iterable[api_pb2.TtsResponse]
@@ -269,10 +268,9 @@ class Client:
                 if error_code not in {StatusCode.RESOURCE_EXHAUSTED, StatusCode.UNAVAILABLE}:
                     raise
 
-                if retries < max_retries:
-                    retries += 1
+                if attempt < max_attempts:
                     # It's a poor customer experience to show internal details about retries, so we only debug log here.
-                    logging.debug(f"Retrying in {backoff} ms ({retries} attempts so far)...  ({error_code})")
+                    logging.debug(f"Retrying in {backoff * 1000} ms ({attempt} attempts so far)...  ({error_code})")
                     if backoff > 0:
                         time.sleep(backoff)
                     continue
@@ -282,7 +280,7 @@ class Client:
 
                 # We log fallbacks to give customers an extra signal that they should scale up their on-prem appliance
                 # (e.g. by paying for more GPU quota)
-                logging.info(f"Falling back to {self._fallback_rpc[0]}... ({error_code})")
+                logging.info(f"Falling back to {self._fallback_rpc[0]} because {self._rpc[0]} threw: {error_code}")
                 try:
                     stub = api_pb2_grpc.TtsStub(self._fallback_rpc[1])
                     response = stub.Tts(request)  # type: Iterable[api_pb2.TtsResponse]
