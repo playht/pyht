@@ -225,6 +225,7 @@ class AsyncClient:
                     context.assign(stream)
                 async for response in stream:
                     yield response.data
+                break
             except grpc.RpcError as e:
                 error_code = getattr(e, "code")()
                 logging.debug(f"Error: {error_code}")
