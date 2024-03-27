@@ -8,6 +8,7 @@ from typing import Generator, Iterable, Iterator, List, Tuple
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import io
+import json
 import os
 import queue
 import tempfile
@@ -21,6 +22,23 @@ from .lease import Lease, LeaseFactory
 from .protos import api_pb2, api_pb2_grpc
 from .protos.api_pb2 import Format
 from .utils import ensure_sentence_end, normalize, split_text, SENTENCE_END_REGEX
+
+
+CLIENT_RETRY_OPTIONS = [
+        ("grpc.enable_retries", 1),
+        ("grpc.service_config", json.dumps({
+            "methodConfig": [{
+                "name": [{}],
+                "retryPolicy": {
+                    "maxAttempts": 3,
+                    "initialBackoff": "0.01s",
+                    "maxBackoff": "0.3s",
+                    "backoffMultiplier": 4,
+                    "retryableStatusCodes": ["UNAVAILABLE"],
+                },
+            }]
+        }))
+    ]
 
 
 @dataclass
@@ -181,8 +199,8 @@ class Client:
             if not self._rpc:
                 insecure = self._advanced.insecure or "on-prem.play.ht" in grpc_addr
                 channel = (
-                    insecure_channel(grpc_addr) if insecure
-                    else secure_channel(grpc_addr, ssl_channel_credentials())
+                    insecure_channel(grpc_addr, options=CLIENT_RETRY_OPTIONS) if insecure
+                    else secure_channel(grpc_addr, ssl_channel_credentials(), options=CLIENT_RETRY_OPTIONS)
                 )
                 self._rpc = (grpc_addr, channel)
 
@@ -199,8 +217,8 @@ class Client:
                         self._fallback_rpc = None
                     if not self._fallback_rpc:
                         channel = (
-                            insecure_channel(fallback_addr) if self._advanced.insecure
-                            else secure_channel(fallback_addr, ssl_channel_credentials())
+                            insecure_channel(fallback_addr, options=CLIENT_RETRY_OPTIONS) if self._advanced.insecure
+                            else secure_channel(fallback_addr, ssl_channel_credentials(), options=CLIENT_RETRY_OPTIONS)
                         )
                         self._fallback_rpc = (fallback_addr, channel)
 

@@ -17,7 +17,7 @@ from grpc.aio import Channel, Call, insecure_channel, secure_channel, UnaryStrea
 from grpc import ssl_channel_credentials, StatusCode
 
 
-from .client import TTSOptions, CongestionCtrl
+from .client import TTSOptions, CongestionCtrl, CLIENT_RETRY_OPTIONS
 from .lease import Lease, LeaseFactory
 from .protos import api_pb2, api_pb2_grpc
 from .utils import ensure_sentence_end, normalize, split_text, SENTENCE_END_REGEX
@@ -146,8 +146,8 @@ class AsyncClient:
             if self._rpc is None:
                 insecure = self._advanced.insecure or "on-prem.play.ht" in grpc_addr
                 channel = (
-                    insecure_channel(grpc_addr) if insecure
-                    else secure_channel(grpc_addr, ssl_channel_credentials())
+                    insecure_channel(grpc_addr, options=CLIENT_RETRY_OPTIONS) if insecure
+                    else secure_channel(grpc_addr, ssl_channel_credentials(), options=CLIENT_RETRY_OPTIONS)
                 )
                 self._rpc = (grpc_addr, channel)
 
@@ -164,8 +164,8 @@ class AsyncClient:
                         self._fallback_rpc = None
                     if self._fallback_rpc is None:
                         channel = (
-                            insecure_channel(fallback_addr) if self._advanced.insecure
-                            else secure_channel(fallback_addr, ssl_channel_credentials())
+                            insecure_channel(fallback_addr, options=CLIENT_RETRY_OPTIONS) if self._advanced.insecure
+                            else secure_channel(fallback_addr, ssl_channel_credentials(), options=CLIENT_RETRY_OPTIONS)
                         )
                         self._fallback_rpc = (fallback_addr, channel)
 
