@@ -323,6 +323,9 @@ class AsyncClient:
         except RuntimeError:
             asyncio.run(self.close())
 
+    def metrics(self) -> list[Metrics]:
+        return self._telemetry.metrics()
+
 
 class UnaryStreamRendezvous(AsyncIterator[api_pb2.TtsResponse], Call):
     pass
