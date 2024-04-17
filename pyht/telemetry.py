@@ -69,15 +69,13 @@ class Metrics:
         return self
 
     def inc(self, counter: str, count: int = 1) -> Metrics:
-        if counter not in self.counters:
-            self.counters[counter] = 0
-        self.counters[counter] += count
+        self.counters[counter] = self.counters.get(counter, 0) + count
         return self
 
     def start_timer(self, name: str, auto_finish: bool = True) -> Metrics:
-        if name not in self.timers:
-            self.timers[name] = Timer(name, auto_finish)
-        self.timers[name].start(time.time())
+        timer = self.timers.setdefault(name, Timer(name, auto_finish))
+        timer.auto_finish = auto_finish
+        timer.start(time.time())
         return self
 
     def finish_timer(self, name: str) -> Metrics:
@@ -87,10 +85,7 @@ class Metrics:
         return self
 
     def put(self, key: str, value: any) -> Metrics:
-        if key not in self.attributes:
-            self.attributes[key] = []
-
-        self.attributes[key].put(str(value))
+        self.attributes.setdefault(key, []).append(str(value))
         return self
 
     def finish_ok(self):
@@ -126,17 +121,17 @@ class Timer:
         self.auto_finish = auto_finish
 
         self.depth = 0
-        self.last_time = 0
+        self.last_time = 0.0
         self.count = 0
-        self.duration = 0
+        self.duration = 0.0
 
-    def start(self, now: int):
+    def start(self, now: float):
         if self.depth > 0:
             self.duration += self.depth * (now - self.last_time)
         self.last_time = now
         self.depth += 1
 
-    def finish(self, now: int):
+    def finish(self, now: float):
         if self.depth < 1:
             return
         self.duration += self.depth * (now - self.last_time)
@@ -150,7 +145,7 @@ class Timer:
     def add_time(self, elapsed_time):
         self.add(elapsed_time, 1)
 
-    def add(self, elapsed_time: int, count: int):
+    def add(self, elapsed_time: float, count: int):
         self.count += count
         self.duration += elapsed_time
 
