@@ -35,7 +35,7 @@ class Metrics:
         },
         "attributes": {
           "endpoint": [
-            "vocode-000000000000002a.on-prem.play.ht:11045"
+            "test-0000000000000001.on-prem.play.ht:11045"
           ],
           "text": "This is a test.  This is the second sentence."
         },
