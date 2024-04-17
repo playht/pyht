@@ -63,6 +63,7 @@ class Metrics:
     def start(self, operation: str) -> Metrics:
         self.operation = operation
         self.start_time = time.time()
+        self.start_timer(operation)
         return self
 
     def inc(self, counter: str, count: int = 1) -> Metrics:
@@ -118,7 +119,7 @@ class Timer:
     def __init__(self, name: str, duration: float = 0):
         self.name = name
         self.last_start = None
-        self.duration = 0
+        self.duration = duration
 
     def start(self):
         self.last_start = time.perf_counter()
