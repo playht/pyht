@@ -464,7 +464,6 @@ class _OutputStream(Iterator[bytes]):
         self._close.set()
 
 
-
 def _audio_begins_at(fmt: Format) -> int:
     if fmt == Format.FORMAT_WAV or fmt == Format.FORMAT_MP3:
         return 1
