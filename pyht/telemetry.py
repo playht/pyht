@@ -68,7 +68,7 @@ class Metrics:
         print(f"Start {operation} @ {self.start_time}")
         return self
 
-    def increment(self, counter: str, count: int = 1) -> Metrics:
+    def inc(self, counter: str, count: int = 1) -> Metrics:
         if counter not in self.counters:
             self.counters[counter] = 0
         self.counters[counter] += count
@@ -86,20 +86,20 @@ class Metrics:
         self.timers[name].finish(time.time())
         return self
 
-    def append(self, key: str, value: any) -> Metrics:
+    def put(self, key: str, value: any) -> Metrics:
         if key not in self.attributes:
             self.attributes[key] = []
 
-        self.attributes[key].append(str(value))
+        self.attributes[key].put(str(value))
         return self
 
     def finish_ok(self):
-        self.increment("ok")
+        self.inc("ok")
         self.finish("ok")
 
     def finish_error(self, reason: str):
-        self.increment("error")
-        self.append("error.reason", reason)
+        self.inc("error")
+        self.put("error.reason", reason)
         self.finish("error")
 
     def finish(self, status: str):
@@ -168,17 +168,3 @@ class Timer:
 
     def __repr__(self):
         return repr({'duration': self.duration, 'count': self.count})
-
-def measure(operation: str, fn: callable, *args, **kwargs):
-    metrics = Metrics()
-    metrics.start(operation)
-    try:
-        return fn(*args, **kwargs)
-    except Exception as e:
-        metrics.increment("error")
-        metrics.append("error.reason", str(e))
-        metrics.finish("error")
-        raise e
-    finally:
-        metrics.increment("ok")
-        metrics.finish("ok")
