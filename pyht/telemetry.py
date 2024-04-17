@@ -3,21 +3,6 @@ from __future__ import annotations
 import time
 
 
-def measure(operation: str, fn: callable, *args, **kwargs):
-    metrics = Metrics()
-    metrics.start(operation)
-    try:
-        return fn(*args, **kwargs)
-    except Exception as e:
-        metrics.increment("error")
-        metrics.append("error.reason", str(e))
-        metrics.finish("error")
-        raise e
-    finally:
-        metrics.increment("ok")
-        metrics.finish("ok")
-
-
 class Telemetry:
     def __init__(self, buffer_size: int = 1000):
         self._metrics = []
@@ -120,6 +105,8 @@ class Metrics:
     def finish(self, status: str):
         now = time.time()
         self.status = status
+        if self.start_time is None:
+            self.start_time = now
         self.end_time = now
         self.duration = now - self.start_time
 
@@ -182,3 +169,16 @@ class Timer:
     def __repr__(self):
         return repr({'duration': self.duration, 'count': self.count})
 
+def measure(operation: str, fn: callable, *args, **kwargs):
+    metrics = Metrics()
+    metrics.start(operation)
+    try:
+        return fn(*args, **kwargs)
+    except Exception as e:
+        metrics.increment("error")
+        metrics.append("error.reason", str(e))
+        metrics.finish("error")
+        raise e
+    finally:
+        metrics.increment("ok")
+        metrics.finish("ok")

@@ -18,6 +18,7 @@ import filelock
 import grpc
 from grpc import Channel, insecure_channel, secure_channel, ssl_channel_credentials, StatusCode
 
+from . import telemetry
 from .lease import Lease, LeaseFactory
 from .protos import api_pb2, api_pb2_grpc
 from .protos.api_pb2 import Format
