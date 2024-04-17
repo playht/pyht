@@ -196,10 +196,10 @@ class AsyncClient:
                 yield data
 
     def tts(
-            self,
-            text: str | list[str],
-            options: TTSOptions,
-            voice_engine: str | None = None
+        self,
+        text: str | list[str],
+        options: TTSOptions,
+        voice_engine: str | None = None
     ) -> AsyncIterable[bytes]:
         metrics = self._telemetry.start("tts-request")
         try:
