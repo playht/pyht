@@ -224,7 +224,7 @@ class AsyncClient:
 
             for attempt in range(1, max_attempts + 1):
                 try:
-                    metrics.append("text", request.params.text).append("endpoint", self._rpc[0])
+                    metrics.append("text", str(request.params.text)).append("endpoint", str(self._rpc[0]))
                     metrics.start_timer("time-to-first-audio", auto_finish=False)
                     stub = api_pb2_grpc.TtsStub(self._rpc[1])
                     chunks: TtsUnaryStream = stub.Tts(request)
@@ -259,7 +259,7 @@ class AsyncClient:
                     logging.info(f"Falling back to {self._fallback_rpc[0]} because {self._rpc[0]} threw: {error_code}")
                     metrics.inc("fallback").append("fallback.reason", str(error_code))
                     try:
-                        metrics.append("text", request.params.text).append("endpoint", self._fallback_rpc[0])
+                        metrics.append("text", str(request.params.text)).append("endpoint", str(self._fallback_rpc[0]))
                         metrics.start_timer("time-to-first-audio", auto_finish=False)
                         stub = api_pb2_grpc.TtsStub(self._fallback_rpc[1])
                         chunks: TtsUnaryStream = stub.Tts(request)
