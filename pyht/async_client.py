@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, AsyncGenerator, AsyncIterable, AsyncIterator, Coroutine
 
 import asyncio
@@ -16,7 +17,8 @@ import grpc
 from grpc.aio import Channel, Call, insecure_channel, secure_channel, UnaryStreamCall
 from grpc import ssl_channel_credentials, StatusCode
 
-from . import telemetry, Format
+from pyht import Format
+from .telemetry import Telemetry, Metrics
 from .client import TTSOptions, CongestionCtrl, CLIENT_RETRY_OPTIONS
 from .lease import Lease, LeaseFactory
 from .protos import api_pb2, api_pb2_grpc
@@ -91,7 +93,7 @@ class AsyncClient:
         else:
             self._lease_loop_future = asyncio.Future()
             self._lease_loop_future.set_result(None)
-        self._telemetry = telemetry.Telemetry(self._advanced.metrics_buffer_size)
+        self._telemetry = Telemetry(self._advanced.metrics_buffer_size)
 
         if auto_connect and not self._advanced.auto_refresh_lease:
             asyncio.ensure_future(self.refresh_lease())
@@ -194,90 +196,99 @@ class AsyncClient:
             async for data in self.tts(buffer.getvalue(), options, voice_engine):
                 yield data
 
-    async def tts(
-        self,
-        text: str | list[str],
-        options: TTSOptions,
-        voice_engine: str | None = None,
-        context: AsyncContext | None = None
+    def tts(
+            self,
+            text: str | list[str],
+            options: TTSOptions,
+            voice_engine: str | None = None
     ) -> AsyncIterable[bytes]:
         metrics = self._telemetry.start("tts-request")
         try:
-            await self.refresh_lease()
-            async with self._lock:
-                assert self._lease is not None and self._rpc is not None
-                lease_data = self._lease.data
-
-            if isinstance(text, str):
-                text = split_text(normalize(text))
-            else:
-                text = [normalize(x) for x in text]
-            text = ensure_sentence_end(text)
-
-            request = api_pb2.TtsRequest(params=options.tts_params(text, voice_engine), lease=lease_data)
-
-            max_attempts = 1
-            backoff = 0
-            if self._advanced.congestion_ctrl == CongestionCtrl.STATIC_MAR_2023:
-                max_attempts = 3
-                backoff = 0.05
-
-            for attempt in range(1, max_attempts + 1):
-                try:
-                    metrics.append("text", str(request.params.text)).append("endpoint", str(self._rpc[0]))
-                    metrics.start_timer("time-to-first-audio", auto_finish=False)
-                    stub = api_pb2_grpc.TtsStub(self._rpc[1])
-                    chunks: TtsUnaryStream = stub.Tts(request)
-                    chunk_idx = -1
-                    if context is not None:
-                        context.assign(chunks)
-                    async for chunk in chunks:
-                        chunk_idx += 1
-                        if chunk_idx == _audio_begins_at(options.format):
-                            metrics.finish_timer("time-to-first-audio")
-                        yield chunk.data
-                    metrics.finish_ok()
-                    break
-                except grpc.RpcError as e:
-                    error_code = getattr(e, "code")()
-                    logging.debug(f"Error: {error_code}")
-                    if error_code not in {StatusCode.RESOURCE_EXHAUSTED, StatusCode.UNAVAILABLE}:
-                        raise
-
-                    if attempt < max_attempts:
-                        logging.debug(f"Retrying in {backoff * 1000} sec ({attempt} attempts so far)... ({error_code})")
-                        metrics.inc("retry").append("retry.reason", str(error_code))
-                        metrics.start_timer("retry-backoff")
-                        if backoff > 0:
-                            await asyncio.sleep(backoff)
-                        metrics.finish_timer("retry-backoff")
-                        continue
-
-                    if self._fallback_rpc is None:
-                        raise
-
-                    logging.info(f"Falling back to {self._fallback_rpc[0]} because {self._rpc[0]} threw: {error_code}")
-                    metrics.inc("fallback").append("fallback.reason", str(error_code))
-                    try:
-                        metrics.append("text", str(request.params.text)).append("endpoint", str(self._fallback_rpc[0]))
-                        metrics.start_timer("time-to-first-audio", auto_finish=False)
-                        stub = api_pb2_grpc.TtsStub(self._fallback_rpc[1])
-                        chunks: TtsUnaryStream = stub.Tts(request)
-                        chunk_idx = -1
-                        if context is not None:
-                            context.assign(chunks)
-                        async for chunk in chunks:
-                            chunk_idx += 1
-                            if chunk_idx == _audio_begins_at(options.format):
-                                metrics.finish_timer("time-to-first-audio")
-                            yield chunk.data
-                        metrics.finish_ok()
-                        break
-                    except grpc.RpcError as fallback_e:
-                        raise fallback_e from e
+            return self._tts(text, options, voice_engine, metrics)
         except Exception as e:
             metrics.finish_error(str(e))
             raise e
+
+    async def _tts(
+        self,
+        text: str | list[str],
+        options: TTSOptions,
+        voice_engine: str | None,
+        metrics: Metrics,
+        context: AsyncContext | None = None
+    ) -> AsyncIterable[bytes]:
+        start = time.perf_counter()
+        await self.refresh_lease()
+        async with self._lock:
+            assert self._lease is not None and self._rpc is not None
+            lease_data = self._lease.data
+
+        if isinstance(text, str):
+            text = split_text(normalize(text))
+        else:
+            text = [normalize(x) for x in text]
+        text = ensure_sentence_end(text)
+
+        request = api_pb2.TtsRequest(params=options.tts_params(text, voice_engine), lease=lease_data)
+
+        max_attempts = 1
+        backoff = 0
+        if self._advanced.congestion_ctrl == CongestionCtrl.STATIC_MAR_2023:
+            max_attempts = 3
+            backoff = 0.05
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                metrics.append("text", str(request.params.text)).append("endpoint", str(self._rpc[0]))
+                stub = api_pb2_grpc.TtsStub(self._rpc[1])
+                stream: TtsUnaryStream = stub.Tts(request)
+                chunk_idx = -1
+                if context is not None:
+                    context.assign(stream)
+                async for chunk in stream:
+                    chunk_idx += 1
+                    if chunk_idx == _audio_begins_at(options.format):
+                        metrics.set_timer("time-to-first-audio", time.perf_counter() - start)
+                    yield chunk.data
+                metrics.finish_ok()
+                break
+            except grpc.RpcError as e:
+                error_code = getattr(e, "code")()
+                logging.debug(f"Error: {error_code}")
+                if error_code not in {StatusCode.RESOURCE_EXHAUSTED, StatusCode.UNAVAILABLE}:
+                    raise
+
+                if attempt < max_attempts:
+                    logging.debug(f"Retrying in {backoff * 1000} sec ({attempt} attempts so far)... ({error_code})")
+                    metrics.inc("retry").append("retry.reason", str(error_code))
+                    metrics.start_timer("retry-backoff")
+                    if backoff > 0:
+                        await asyncio.sleep(backoff)
+                    metrics.finish_timer("retry-backoff")
+                    continue
+
+                if self._fallback_rpc is None:
+                    raise
+
+                logging.info(f"Falling back to {self._fallback_rpc[0]} because {self._rpc[0]} threw: {error_code}")
+                metrics.inc("fallback").append("fallback.reason", str(error_code))
+                try:
+                    metrics.append("text", str(request.params.text)).append("endpoint", str(self._fallback_rpc[0]))
+                    metrics.start_timer("time-to-first-audio")
+                    stub = api_pb2_grpc.TtsStub(self._fallback_rpc[1])
+                    stream: TtsUnaryStream = stub.Tts(request)
+                    chunk_idx = -1
+                    if context is not None:
+                        context.assign(stream)
+                    async for chunk in stream:
+                        chunk_idx += 1
+                        if chunk_idx == _audio_begins_at(options.format):
+                            metrics.set_timer("time-to-first-audio", time.perf_counter() - start)
+                        yield chunk.data
+                    metrics.finish_ok()
+                    break
+                except grpc.RpcError as fallback_e:
+                    raise fallback_e from e
 
     def get_stream_pair(
         self,
@@ -432,6 +443,4 @@ class _OutputStream(AsyncIterator[bytes]):
 
 
 def _audio_begins_at(fmt: Format) -> int:
-    if fmt == Format.FORMAT_WAV or fmt == Format.FORMAT_MP3:
-        return 1
-    return 0
+    return 0 if fmt in {api_pb2.Format.FORMAT_RAW, api_pb2.Format.FORMAT_MULAW} else 1

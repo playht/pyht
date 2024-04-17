@@ -18,7 +18,7 @@ import filelock
 import grpc
 from grpc import Channel, insecure_channel, secure_channel, ssl_channel_credentials, StatusCode
 
-from . import telemetry
+from .telemetry import Telemetry, Metrics
 from .lease import Lease, LeaseFactory
 from .protos import api_pb2, api_pb2_grpc
 from .protos.api_pb2 import Format
@@ -145,7 +145,7 @@ class Client:
         self._fallback_rpc: Tuple[str, Channel] | None = None
         self._lock = threading.Lock()
         self._timer: threading.Timer | None = None
-        self._telemetry = telemetry.Telemetry(self._advanced.metrics_buffer_size)
+        self._telemetry = Telemetry(self._advanced.metrics_buffer_size)
 
         if auto_connect:
             self.refresh_lease()
@@ -270,8 +270,9 @@ class Client:
             text: str | List[str],
             options: TTSOptions,
             voice_engine: str | None,
-            metrics: telemetry.Metrics
+            metrics: Metrics
     ) -> Iterable[bytes]:
+        start = time.perf_counter()
         self.refresh_lease()
         with self._lock:
             assert self._lease is not None and self._rpc is not None, "No connection"
@@ -294,14 +295,13 @@ class Client:
         for attempt in range(1, max_attempts + 1):
             try:
                 metrics.append("text", str(request.params.text)).append("endpoint", str(self._rpc[0]))
-                metrics.start_timer("time-to-first-audio", auto_finish=False)
                 stub = api_pb2_grpc.TtsStub(self._rpc[1])
-                chunks = stub.Tts(request)  # type: Iterable[api_pb2.TtsResponse]
+                stream = stub.Tts(request)  # type: Iterable[api_pb2.TtsResponse]
                 chunk_idx = -1
-                for chunk in chunks:
+                for chunk in stream:
                     chunk_idx += 1
                     if chunk_idx == _audio_begins_at(options.format):
-                        metrics.finish_timer("time-to-first-audio")
+                        metrics.set_timer("time-to-first-audio", time.perf_counter() - start)
                     yield chunk.data
                 metrics.finish_ok()
                 break
@@ -332,14 +332,13 @@ class Client:
                 metrics.inc("fallback").append("fallback.reason", str(error_code))
                 try:
                     metrics.append("text", str(request.params.text)).append("endpoint", str(self._fallback_rpc[0]))
-                    metrics.start_timer("time-to-first-audio", auto_finish=False)
                     stub = api_pb2_grpc.TtsStub(self._fallback_rpc[1])
-                    chunks = stub.Tts(request)  # type: Iterable[api_pb2.TtsResponse]
+                    stream = stub.Tts(request)  # type: Iterable[api_pb2.TtsResponse]
                     chunk_idx = -1
-                    for chunk in chunks:
+                    for chunk in stream:
                         chunk_idx += 1
                         if chunk_idx == _audio_begins_at(options.format):
-                            metrics.finish_timer("time-to-first-audio")
+                            metrics.set_timer("time-to-first-audio", time.perf_counter() - start)
                         yield chunk.data
                     metrics.finish_ok()
                     break
@@ -376,7 +375,7 @@ class Client:
     def __del__(self):
         self.close()
 
-    def metrics(self) -> List[telemetry.Metrics]:
+    def metrics(self) -> List[Metrics]:
         return self._telemetry.metrics()
 
 
@@ -464,7 +463,6 @@ class _OutputStream(Iterator[bytes]):
         self._close.set()
 
 
+
 def _audio_begins_at(fmt: Format) -> int:
-    if fmt == Format.FORMAT_WAV or fmt == Format.FORMAT_MP3:
-        return 1
-    return 0
+    return 0 if fmt in {api_pb2.Format.FORMAT_RAW, api_pb2.Format.FORMAT_MULAW} else 1

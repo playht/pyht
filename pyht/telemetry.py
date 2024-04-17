@@ -41,12 +41,10 @@ class Metrics:
         },
         "timers": {
           "time-to-first-audio": {
-            "duration": 0.149,
-            "count": 1
+            "duration": 0.149
           },
           "tts-request": {
-            "duration": 0.679,
-            "count": 1
+            "duration": 0.679
           }
         }
       }
@@ -65,23 +63,26 @@ class Metrics:
     def start(self, operation: str) -> Metrics:
         self.operation = operation
         self.start_time = time.time()
-        print(f"Start {operation} @ {self.start_time}")
         return self
 
     def inc(self, counter: str, count: int = 1) -> Metrics:
         self.counters[counter] = self.counters.get(counter, 0) + count
         return self
 
-    def start_timer(self, name: str, auto_finish: bool = True) -> Metrics:
-        timer = self.timers.setdefault(name, Timer(name, auto_finish))
-        timer.auto_finish = auto_finish
-        timer.start(time.time())
+    def start_timer(self, name: str) -> Metrics:
+        timer = self.timers.setdefault(name, Timer(name))
+        timer.start()
         return self
 
     def finish_timer(self, name: str) -> Metrics:
-        if name not in self.timers:
-            return self
-        self.timers[name].finish(time.time())
+        timer = self.timers.get(name)
+        if timer is None:
+            raise ValueError(f"Timer not started: {name}.")
+        timer.finish()
+        return self
+
+    def set_timer(self, name: str, duration: float) -> Metrics:
+        self.timers[name] = Timer(name, duration)
         return self
 
     def append(self, key: str, value: str) -> Metrics:
@@ -105,61 +106,37 @@ class Metrics:
         self.end_time = now
         self.duration = now - self.start_time
 
+        # finish all timers - finishing is idempotent so it's okay if a timer was finished before
         for timer in self.timers.values():
-            if timer.pending() and timer.auto_finish:
-                timer.finish(now)
-
-        print(f"Finish {self.operation} @ {self.end_time} duration: {self.duration}")
+            timer.finish()
 
     def __repr__(self):
         return repr(self.__dict__)
 
 
 class Timer:
-    def __init__(self, name: str, auto_finish: bool):
+    def __init__(self, name: str, duration: float = 0):
         self.name = name
-        self.auto_finish = auto_finish
+        self.last_start = None
+        self.duration = 0
 
-        self.depth = 0
-        self.last_time = 0.0
-        self.count = 0
-        self.duration = 0.0
+    def start(self):
+        self.last_start = time.perf_counter()
 
-    def start(self, now: float):
-        if self.depth > 0:
-            self.duration += self.depth * (now - self.last_time)
-        self.last_time = now
-        self.depth += 1
+    def add(self, duration: float):
+        self.duration += duration
 
-    def finish(self, now: float):
-        if self.depth < 1:
+    def finish(self):
+        if self.last_start is None:
             return
-        self.duration += self.depth * (now - self.last_time)
-        self.last_time = now
-        self.count += 1
-        self.depth -= 1
+        self.duration += (time.perf_counter() - self.last_start)
+        self.last_start = None
 
-    def pending(self) -> bool:
-        return self.depth > 0
+    def format(self) -> str:
+        return f"{self.name}:{self.duration}"
 
-    def add_time(self, elapsed_time):
-        self.add(elapsed_time, 1)
-
-    def add(self, elapsed_time: float, count: int):
-        self.count += count
-        self.duration += elapsed_time
-
-    def get_count(self):
-        return self.count
-
-    def get_duration(self):
-        return self.duration
-
-    def format(self):
-        return f"{self.name}:{self.duration}/{self.count}"
-
-    def __str__(self):
+    def __str__(self) -> str:
         return self.format()
 
-    def __repr__(self):
-        return repr({'duration': self.duration, 'count': self.count})
+    def __repr__(self) -> str:
+        return repr({'duration': self.duration})
