@@ -293,7 +293,7 @@ class Client:
 
         for attempt in range(1, max_attempts + 1):
             try:
-                metrics.put("text", request.params.text).put("endpoint", self._rpc[0])
+                metrics.append("text", request.params.text).append("endpoint", self._rpc[0])
                 metrics.start_timer("time-to-first-audio", auto_finish=False)
                 stub = api_pb2_grpc.TtsStub(self._rpc[1])
                 chunks = stub.Tts(request)  # type: Iterable[api_pb2.TtsResponse]
@@ -315,7 +315,7 @@ class Client:
                 if attempt < max_attempts:
                     # It's a poor customer experience to show internal details about retries, so we only debug log here.
                     logging.debug(f"Retrying in {backoff * 1000} ms ({attempt} attempts so far)...  ({error_code})")
-                    metrics.inc("retry").put("retry.reason", str(error_code))
+                    metrics.inc("retry").append("retry.reason", str(error_code))
                     metrics.start_timer("retry-backoff")
                     if backoff > 0:
                         time.sleep(backoff)
@@ -329,9 +329,9 @@ class Client:
                 # We log fallbacks to give customers an extra signal that they should scale up their on-prem appliance
                 # (e.g. by paying for more GPU quota)
                 logging.info(f"Falling back to {self._fallback_rpc[0]} because {self._rpc[0]} threw: {error_code}")
-                metrics.inc("fallback").put("fallback.reason", str(error_code))
+                metrics.inc("fallback").append("fallback.reason", str(error_code))
                 try:
-                    metrics.put("text", request.params.text).put("endpoint", self._fallback_rpc[0])
+                    metrics.append("text", request.params.text).append("endpoint", self._fallback_rpc[0])
                     metrics.start_timer("time-to-first-audio", auto_finish=False)
                     stub = api_pb2_grpc.TtsStub(self._fallback_rpc[1])
                     chunks = stub.Tts(request)  # type: Iterable[api_pb2.TtsResponse]

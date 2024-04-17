@@ -84,8 +84,8 @@ class Metrics:
         self.timers[name].finish(time.time())
         return self
 
-    def put(self, key: str, value: any) -> Metrics:
-        self.attributes.setdefault(key, []).append(str(value))
+    def append(self, key: str, value: str) -> Metrics:
+        self.attributes.setdefault(key, []).append(value)
         return self
 
     def finish_ok(self):
@@ -94,7 +94,7 @@ class Metrics:
 
     def finish_error(self, reason: str):
         self.inc("error")
-        self.put("error.reason", reason)
+        self.append("error.reason", reason)
         self.finish("error")
 
     def finish(self, status: str):
