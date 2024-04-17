@@ -18,6 +18,7 @@ import filelock
 import grpc
 from grpc import Channel, insecure_channel, secure_channel, ssl_channel_credentials, StatusCode
 
+from .telemetry import Telemetry, Metrics
 from .lease import Lease, LeaseFactory
 from .protos import api_pb2, api_pb2_grpc
 from .protos.api_pb2 import Format
@@ -111,6 +112,7 @@ class Client:
         auto_refresh_lease: bool = True
         disable_lease_disk_cache: bool = False
         congestion_ctrl: CongestionCtrl = CongestionCtrl.OFF
+        metrics_buffer_size: int = 1000
 
     def __init__(
         self,
@@ -143,6 +145,8 @@ class Client:
         self._fallback_rpc: Tuple[str, Channel] | None = None
         self._lock = threading.Lock()
         self._timer: threading.Timer | None = None
+        self._telemetry = Telemetry(self._advanced.metrics_buffer_size)
+
         if auto_connect:
             self.refresh_lease()
 
@@ -249,11 +253,26 @@ class Client:
             yield from self.tts(buffer.getvalue(), options, voice_engine)
 
     def tts(
-        self,
-        text: str | List[str],
-        options: TTSOptions,
-        voice_engine: str | None = None
+            self,
+            text: str | List[str],
+            options: TTSOptions,
+            voice_engine: str | None = None
     ) -> Iterable[bytes]:
+        metrics = self._telemetry.start("tts-request")
+        try:
+            return self._tts(text, options, voice_engine, metrics)
+        except Exception as e:
+            metrics.finish_error(str(e))
+            raise e
+
+    def _tts(
+            self,
+            text: str | List[str],
+            options: TTSOptions,
+            voice_engine: str | None,
+            metrics: Metrics
+    ) -> Iterable[bytes]:
+        start = time.perf_counter()
         self.refresh_lease()
         with self._lock:
             assert self._lease is not None and self._rpc is not None, "No connection"
@@ -275,37 +294,56 @@ class Client:
 
         for attempt in range(1, max_attempts + 1):
             try:
+                metrics.append("text", str(request.params.text)).append("endpoint", str(self._rpc[0]))
                 stub = api_pb2_grpc.TtsStub(self._rpc[1])
-                response = stub.Tts(request)  # type: Iterable[api_pb2.TtsResponse]
-                for item in response:
-                    yield item.data
+                stream = stub.Tts(request)  # type: Iterable[api_pb2.TtsResponse]
+                chunk_idx = -1
+                for chunk in stream:
+                    chunk_idx += 1
+                    if chunk_idx == _audio_begins_at(options.format):
+                        metrics.set_timer("time-to-first-audio", time.perf_counter() - start)
+                    yield chunk.data
+                metrics.finish_ok()
                 break
             except grpc.RpcError as e:
                 error_code = getattr(e, "code")()
                 logging.debug(f"Error: {error_code}")
                 if error_code not in {StatusCode.RESOURCE_EXHAUSTED, StatusCode.UNAVAILABLE}:
+                    metrics.finish_error(str(e))
                     raise
 
                 if attempt < max_attempts:
                     # It's a poor customer experience to show internal details about retries, so we only debug log here.
                     logging.debug(f"Retrying in {backoff * 1000} ms ({attempt} attempts so far)...  ({error_code})")
+                    metrics.inc("retry").append("retry.reason", str(error_code))
+                    metrics.start_timer("retry-backoff")
                     if backoff > 0:
                         time.sleep(backoff)
+                    metrics.finish_timer("retry-backoff")
                     continue
 
                 if self._fallback_rpc is None:
+                    metrics.finish_error(str(e))
                     raise
 
                 # We log fallbacks to give customers an extra signal that they should scale up their on-prem appliance
                 # (e.g. by paying for more GPU quota)
                 logging.info(f"Falling back to {self._fallback_rpc[0]} because {self._rpc[0]} threw: {error_code}")
+                metrics.inc("fallback").append("fallback.reason", str(error_code))
                 try:
+                    metrics.append("text", str(request.params.text)).append("endpoint", str(self._fallback_rpc[0]))
                     stub = api_pb2_grpc.TtsStub(self._fallback_rpc[1])
-                    response = stub.Tts(request)  # type: Iterable[api_pb2.TtsResponse]
-                    for item in response:
-                        yield item.data
+                    stream = stub.Tts(request)  # type: Iterable[api_pb2.TtsResponse]
+                    chunk_idx = -1
+                    for chunk in stream:
+                        chunk_idx += 1
+                        if chunk_idx == _audio_begins_at(options.format):
+                            metrics.set_timer("time-to-first-audio", time.perf_counter() - start)
+                        yield chunk.data
+                    metrics.finish_ok()
                     break
                 except grpc.RpcError as fallback_e:
+                    metrics.finish_error(str(fallback_e))
                     raise fallback_e from e
 
     def get_stream_pair(
@@ -336,6 +374,9 @@ class Client:
 
     def __del__(self):
         self.close()
+
+    def metrics(self) -> List[Metrics]:
+        return self._telemetry.metrics()
 
 
 class TextStream(Iterator[str]):
@@ -420,3 +461,7 @@ class _OutputStream(Iterator[bytes]):
 
     def close(self):
         self._close.set()
+
+
+def _audio_begins_at(fmt: api_pb2.Format) -> int:
+    return 0 if fmt in {api_pb2.Format.FORMAT_RAW, api_pb2.Format.FORMAT_MULAW} else 1
