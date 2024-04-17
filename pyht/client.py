@@ -464,5 +464,5 @@ class _OutputStream(Iterator[bytes]):
 
 
 
-def _audio_begins_at(fmt: Format) -> int:
+def _audio_begins_at(fmt: api_pb2.Format) -> int:
     return 0 if fmt in {api_pb2.Format.FORMAT_RAW, api_pb2.Format.FORMAT_MULAW} else 1

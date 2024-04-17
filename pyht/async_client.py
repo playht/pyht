@@ -17,7 +17,6 @@ import grpc
 from grpc.aio import Channel, Call, insecure_channel, secure_channel, UnaryStreamCall
 from grpc import ssl_channel_credentials, StatusCode
 
-from pyht import Format
 from .telemetry import Telemetry, Metrics
 from .client import TTSOptions, CongestionCtrl, CLIENT_RETRY_OPTIONS
 from .lease import Lease, LeaseFactory
@@ -442,5 +441,5 @@ class _OutputStream(AsyncIterator[bytes]):
         self._close.set()
 
 
-def _audio_begins_at(fmt: Format) -> int:
+def _audio_begins_at(fmt: api_pb2.Format) -> int:
     return 0 if fmt in {api_pb2.Format.FORMAT_RAW, api_pb2.Format.FORMAT_MULAW} else 1
