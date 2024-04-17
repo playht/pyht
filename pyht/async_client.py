@@ -198,8 +198,8 @@ class AsyncClient:
         self,
         text: str | list[str],
         options: TTSOptions,
-        voice_engine: str | None,
-        context: AsyncContext | None
+        voice_engine: str | None = None,
+        context: AsyncContext | None = None
     ) -> AsyncIterable[bytes]:
         metrics = self._telemetry.start("tts-request")
         try:
