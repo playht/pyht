@@ -11,6 +11,7 @@ import io
 import json
 import os
 import queue
+import re
 import tempfile
 import threading
 
@@ -113,6 +114,7 @@ class Client:
         disable_lease_disk_cache: bool = False
         congestion_ctrl: CongestionCtrl = CongestionCtrl.OFF
         metrics_buffer_size: int = 1000
+        remove_ssml_tags: bool = False
 
     def __init__(
         self,
@@ -283,6 +285,8 @@ class Client:
         else:
             text = [normalize(x) for x in text]
         text = ensure_sentence_end(text)
+        if self._advanced.remove_ssml_tags:
+            text = [normalize(re.sub(r'<[^>]*>', '', x)) for x in text]
 
         request = api_pb2.TtsRequest(params=options.tts_params(text, voice_engine), lease=lease_data)
 
