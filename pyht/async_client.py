@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 import io
 import os
+import re
 import sys
 import tempfile
 
@@ -56,6 +57,7 @@ class AsyncClient:
         disable_lease_disk_cache: bool = False
         congestion_ctrl: CongestionCtrl = CongestionCtrl.OFF
         metrics_buffer_size: int = 1000
+        remove_ssml_tags: bool = False
 
     def __init__(
         self,
@@ -223,9 +225,10 @@ class AsyncClient:
             lease_data = self._lease.data
 
         if isinstance(text, str):
-            text = split_text(normalize(text))
-        else:
-            text = [normalize(x) for x in text]
+            text = split_text(text)
+        if self._advanced.remove_ssml_tags:
+            text = [re.sub(r'<[^>]*>', '', x) for x in text]
+        text = [normalize(x) for x in text]
         text = ensure_sentence_end(text)
 
         request = api_pb2.TtsRequest(params=options.tts_params(text, voice_engine), lease=lease_data)
