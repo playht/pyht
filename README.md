@@ -1,12 +1,14 @@
 # PlayHT API SDK
 
-**pyht** is a Python SDK for the [PlayHT's Text-to-Speech API](https://docs.play.ht/). With **pyht**, you can easily convert text into high-quality audio streams in humanlike voice.
+**pyht** is a Python SDK for the [PlayHT's AI Text-to-Speech API](https://play.ht/text-to-speech-api/). PlayHT builds conversational voice AI models for realtime use cases. With **pyht**, you can easily convert text into high-quality audio streams in humanlike voice.
 
 ## Features
 
 - Stream text-to-speech in real-time.
-- Use prebuilt voices or custom voice clones.
+- Use PlayHT's pre-build voices or create custom voice clones.
+- Stream text from LLM, and generate audio stream in real-time.
 - Supports WAV, MP3, PCM, Mulaw, FLAC, and OGG audio formats.
+- Supports 8KHz, 16KHz, 24KHz, 44.1KHz and 48KHz. 
 
 ## Requirements
 
