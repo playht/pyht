@@ -3,15 +3,15 @@ from __future__ import annotations
 import logging
 import time
 from enum import Enum
-from typing import Generator, Iterable, Iterator, List, Tuple
+from typing import Generator, Iterable, Iterator, List, Tuple, Dict, Any
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import io
 import json
 import os
 import queue
-import re
+import requests
 import tempfile
 import threading
 
@@ -19,11 +19,12 @@ import filelock
 import grpc
 from grpc import Channel, insecure_channel, secure_channel, ssl_channel_credentials, StatusCode
 
+from .inference_coordinates import InferenceCoordinates, InferenceCoordinatesOptions
 from .telemetry import Telemetry, Metrics
 from .lease import Lease, LeaseFactory
 from .protos import api_pb2, api_pb2_grpc
 from .protos.api_pb2 import Format
-from .utils import ensure_sentence_end, normalize, split_text, SENTENCE_END_REGEX
+from .utils import SENTENCE_END_REGEX, prepare_text
 
 
 CLIENT_RETRY_OPTIONS = [
@@ -43,20 +44,100 @@ CLIENT_RETRY_OPTIONS = [
     ]
 
 
+class HTTPFormat(Enum):
+    FORMAT_MP3 = "mp3"
+    FORMAT_WAV = "wav"
+    FORMAT_OGG = "ogg"
+    FORMAT_FLAC = "flac"
+    FORMAT_MULAW = "mulaw"
+
+
+def grpc_format_to_http_format(format: Format) -> HTTPFormat:
+    if format == Format.FORMAT_MP3:
+        return HTTPFormat.FORMAT_MP3
+    elif format == Format.FORMAT_WAV:
+        return HTTPFormat.FORMAT_WAV
+    elif format == Format.FORMAT_OGG:
+        return HTTPFormat.FORMAT_OGG
+    elif format == Format.FORMAT_FLAC:
+        return HTTPFormat.FORMAT_FLAC
+    elif format == Format.FORMAT_MULAW:
+        return HTTPFormat.FORMAT_MULAW
+    else:
+        raise ValueError(f"Unsupported format for HTTP API: {format}")
+
+
+class HTTPQuality(Enum):
+    QUALITY_LOW = "low"
+    QUALITY_DRAFT = "draft"
+    QUALITY_MEDIUM = "medium"
+    QUALITY_HIGH = "high"
+    QUALITY_PREMIUM = "premium"
+
+
+class Language(Enum):
+    AFRIKAANS = "afrikaans"
+    ALBANIAN = "albanian"
+    AMHARIC = "amharic"
+    ARABIC = "arabic"
+    BENGALI = "bengali"
+    BULGARIAN = "bulgarian"
+    CATALAN = "catalan"
+    CROATIAN = "croatian"
+    CZECH = "czech"
+    DANISH = "danish"
+    DUTCH = "dutch"
+    ENGLISH = "english"
+    FRENCH = "french"
+    GALICIAN = "galician"
+    GERMAN = "german"
+    GREEK = "greek"
+    HEBREW = "hebrew"
+    HINDI = "hindi"
+    HUNGARIAN = "hungarian"
+    INDONESIAN = "indonesian"
+    ITALIAN = "italian"
+    JAPANESE = "japanese"
+    KOREAN = "korean"
+    MALAY = "malay"
+    MANDARIN = "mandarin"
+    POLISH = "polish"
+    PORTUGUESE = "portuguese"
+    RUSSIAN = "russian"
+    SERBIAN = "serbian"
+    SPANISH = "spanish"
+    SWEDISH = "swedish"
+    TAGALOG = "tagalog"
+    THAI = "thai"
+    TURKISH = "turkish"
+    UKRAINIAN = "ukrainian"
+    URDU = "urdu"
+    XHOSA = "xhosa"
+    OTHER = "other"
+
+
 @dataclass
 class TTSOptions:
     voice: str
     format: Format = Format.FORMAT_WAV
     sample_rate: int = 24000
-    quality: str = "faster"
+    quality: str | HTTPQuality = "faster"
     speed: float = 1.0
     temperature: float | None = None
     top_p: float | None = None
     text_guidance: float | None = None
     voice_guidance: float | None = None
+    style_guidance: float | None = None
+    repetition_penalty: float | None = None
+    disable_stabilization: bool = False  # only applies to PlayHT2.0
+    seed: int | None = None
+    language: Language | None = None  # only applies to Play3.0
 
     def tts_params(self, text: list[str], voice_engine: str | None) -> api_pb2.TtsParams:
-        quality = self.quality.lower()
+        if isinstance(self.quality, HTTPQuality):
+            quality = self.quality.value.lower()
+        else:
+            quality = self.quality.lower()
         _quality = api_pb2.QUALITY_DRAFT
 
         if voice_engine == "PlayHT2.0" and quality != "faster":
@@ -79,7 +160,50 @@ class TTSOptions:
             params.text_guidance = self.text_guidance
         if self.voice_guidance is not None:
             params.voice_guidance = self.voice_guidance
+        if self.seed is not None:
+            params.seed = self.seed
         return params
+
+
+def output_format_to_mime_type(format: Format) -> str:
+    http_format = grpc_format_to_http_format(format)
+    if http_format == HTTPFormat.FORMAT_MP3:
+        return "audio/mpeg"
+    elif http_format == HTTPFormat.FORMAT_WAV:
+        return "audio/wav"
+    elif http_format == HTTPFormat.FORMAT_OGG:
+        return "audio/ogg"
+    elif http_format == HTTPFormat.FORMAT_FLAC:
+        return "audio/flac"
+    elif http_format == HTTPFormat.FORMAT_MULAW:
+        return "audio/basic"
+    else:
+        return "audio/mpeg"  # mp3 by default
+
+
+def http_prepare_json(text: List[str], options: TTSOptions, voice_engine: str) -> Dict[str, Any]:
+    if type(options.quality) != HTTPQuality:
+        options.quality = HTTPQuality.QUALITY_DRAFT
+    return {
+        "text": text,
+        "voice": options.voice,
+        "quality": options.quality.value,
+        "output_format": grpc_format_to_http_format(options.format).value,
+        "speed": options.speed,
+        "sample_rate": options.sample_rate,
+        "voice_engine": voice_engine,
+        **{k: v for k, v in {
+            "seed": options.seed,
+            "temperature": options.temperature,
+            "top_p": options.top_p,
+            "text_guidance": options.text_guidance,
+            "voice_guidance": options.voice_guidance,
+            "style_guidance": options.style_guidance,
+            "repetition_penalty": options.repetition_penalty,
+        }.items() if v is not None},
+        "language": options.language.value if options.language is not None else None,
+        "version": "v3",
+    }
 
 
 class CongestionCtrl(Enum):
@@ -107,14 +231,19 @@ class Client:
     @dataclass
     class AdvancedOptions:
         api_url: str = "https://api.play.ht/api"
+        congestion_ctrl: CongestionCtrl = CongestionCtrl.OFF
+        metrics_buffer_size: int = 1000
+        remove_ssml_tags: bool = False
+
+        # gRPC (PlayHT2.0 and earlier)
         grpc_addr: str | None = None
         insecure: bool = False
         fallback_enabled: bool = False
         auto_refresh_lease: bool = True
         disable_lease_disk_cache: bool = False
-        congestion_ctrl: CongestionCtrl = CongestionCtrl.OFF
-        metrics_buffer_size: int = 1000
-        remove_ssml_tags: bool = False
+
+        # HTTP (Play3.0)
+        inference_coordinates_options: InferenceCoordinatesOptions = field(default_factory=InferenceCoordinatesOptions)
 
     def __init__(
         self,
@@ -148,9 +277,43 @@ class Client:
         self._lock = threading.Lock()
         self._timer: threading.Timer | None = None
         self._telemetry = Telemetry(self._advanced.metrics_buffer_size)
+        self._user_id = user_id
+        self._api_key = api_key
+        self._inference_coordinates = None
+
+        if self._advanced.congestion_ctrl == CongestionCtrl.STATIC_MAR_2023:
+            self._max_attempts = 3
+            self._backoff = 0.05
+        else:
+            self._max_attempts = 1
+            self._backoff = 0
 
         if auto_connect:
             self.refresh_lease()
+            self.warmup()
+
+    def ensure_inference_coordinates(self):
+        if self._inference_coordinates is None:
+            if self._advanced.inference_coordinates_options.coordinates_generator_function is not None:
+                self._inference_coordinates = self._advanced.inference_coordinates_options.\
+                    coordinates_generator_function(self._user_id, self._api_key,
+                                                   self._advanced.inference_coordinates_options)
+            else:
+                self._inference_coordinates = InferenceCoordinates.get(self._user_id, self._api_key,
+                                                                       self._advanced.inference_coordinates_options)
+
+        assert self._inference_coordinates is not None, "No connection"
+
+    def warmup(self):
+        self.ensure_inference_coordinates()
+
+        try:
+            assert self._inference_coordinates is not None, "No connection"
+            requests.options(self._inference_coordinates.address,
+                             headers={"Origin": "https://play.ht",
+                                      "Access-Control-Request-Method": "POST"})
+        except Exception as e:
+            logging.warning(f"Failed to warmup: {e}")
 
     @classmethod
     def _lease_cache_read(cls) -> bytes | None:
@@ -262,7 +425,10 @@ class Client:
     ) -> Iterable[bytes]:
         metrics = self._telemetry.start("tts-request")
         try:
-            return self._tts(text, options, voice_engine, metrics)
+            if voice_engine is None or voice_engine == "Play3.0":
+                return self._tts_http(text, options, voice_engine, metrics)
+            else:
+                return self._tts(text, options, voice_engine, metrics)
         except Exception as e:
             metrics.finish_error(str(e))
             raise e
@@ -274,30 +440,22 @@ class Client:
             voice_engine: str | None,
             metrics: Metrics
     ) -> Iterable[bytes]:
+        if voice_engine == "Play3.0":
+            raise ValueError("Play3.0 is only supported in the HTTP API; otherwise use the gRPC API.")
+
         start = time.perf_counter()
         self.refresh_lease()
         with self._lock:
             assert self._lease is not None and self._rpc is not None, "No connection"
             lease_data = self._lease.data
 
-        if isinstance(text, str):
-            text = split_text(text)
-        if self._advanced.remove_ssml_tags:
-            text = [re.sub(r'<[^>]*>', '', x) for x in text]
-        text = [normalize(x) for x in text]
-        text = ensure_sentence_end(text)
+        text = prepare_text(text, self._advanced.remove_ssml_tags)
+        metrics.append("text", str(text)).append("endpoint", str(self._rpc[0]))
 
         request = api_pb2.TtsRequest(params=options.tts_params(text, voice_engine), lease=lease_data)
 
-        max_attempts = 1
-        backoff = 0
-        if self._advanced.congestion_ctrl == CongestionCtrl.STATIC_MAR_2023:
-            max_attempts = 3
-            backoff = 0.05
-
-        for attempt in range(1, max_attempts + 1):
+        for attempt in range(1, self._max_attempts + 1):
             try:
-                metrics.append("text", str(request.params.text)).append("endpoint", str(self._rpc[0]))
                 stub = api_pb2_grpc.TtsStub(self._rpc[1])
                 stream = stub.Tts(request)  # type: Iterable[api_pb2.TtsResponse]
                 chunk_idx = -1
@@ -315,13 +473,13 @@ class Client:
                     metrics.finish_error(str(e))
                     raise
 
-                if attempt < max_attempts:
-                    # It's a poor customer experience to show internal details about retries, so we only debug log here.
-                    logging.debug(f"Retrying in {backoff * 1000} ms ({attempt} attempts so far)...  ({error_code})")
+                if attempt < self._max_attempts:
+                    # It's poor customer experience to show internal details about retries, so we only debug log here.
+                    logging.debug(f"Retrying in {self._backoff*1000} ms ({attempt} attempts so far); ({error_code})")
                     metrics.inc("retry").append("retry.reason", str(error_code))
                     metrics.start_timer("retry-backoff")
-                    if backoff > 0:
-                        time.sleep(backoff)
+                    if self._backoff > 0:
+                        time.sleep(self._backoff)
                     metrics.finish_timer("retry-backoff")
                     continue
 
@@ -348,6 +506,65 @@ class Client:
                 except grpc.RpcError as fallback_e:
                     metrics.finish_error(str(fallback_e))
                     raise fallback_e from e
+
+    def _tts_http(
+            self,
+            text: str | List[str],
+            options: TTSOptions,
+            voice_engine: str | None,
+            metrics: Metrics
+    ) -> Iterable[bytes]:
+        if voice_engine is None:
+            voice_engine = "Play3.0"
+        if voice_engine != "Play3.0":
+            raise ValueError("Only Play3.0 is supported in the HTTP API; otherwise use the gRPC API.")
+
+        start = time.perf_counter()
+        self.ensure_inference_coordinates()
+
+        text = prepare_text(text, self._advanced.remove_ssml_tags)
+        assert self._inference_coordinates is not None, "No connection"
+        metrics.append("text", str(text)).append("endpoint", str(self._inference_coordinates.address))
+
+        for attempt in range(1, self._max_attempts + 1):
+            try:
+                assert self._inference_coordinates is not None, "No connection"
+                response = requests.post(
+                        self._inference_coordinates.address,
+                        headers={
+                            "accept": output_format_to_mime_type(options.format),
+                        },
+                        json=http_prepare_json(text, options, voice_engine),
+                        stream=True
+                    )
+                if response.status_code != 200:
+                    raise Exception(f"HTTP {response.status_code}: {response.text}", response.status_code)
+                chunk_idx = -1
+                for chunk in response.iter_content(chunk_size=None):
+                    chunk_idx += 1
+                    if chunk_idx == _audio_begins_at(options.format):
+                        metrics.set_timer("time-to-first-audio", time.perf_counter() - start)
+                    yield chunk
+                metrics.finish_ok()
+                break
+            except Exception as e:
+                logging.debug(f"Error: {e}")
+                if e.args[1] not in {429, 503}:  # HTTP equivalent to gRPC RESOURCE_EXHAUSTED, UNAVAILABLE
+                    metrics.finish_error(str(e))
+                    raise
+
+                if attempt < self._max_attempts:
+                    # It's poor customer experience to show internal details about retries, so we only debug log here.
+                    logging.debug(f"Retrying in {self._backoff*1000} ms ({attempt} attempts so far); ({e.args[1]})")
+                    metrics.inc("retry").append("retry.reason", str(e.args[1]))
+                    metrics.start_timer("retry-backoff")
+                    if self._backoff > 0:
+                        time.sleep(self._backoff)
+                    metrics.finish_timer("retry-backoff")
+                    continue
+
+                metrics.finish_error(str(e))
+                raise
 
     def get_stream_pair(
         self,
