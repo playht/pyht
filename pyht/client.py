@@ -45,6 +45,7 @@ CLIENT_RETRY_OPTIONS = [
 
 
 class HTTPFormat(Enum):
+    FORMAT_RAW = "raw"
     FORMAT_MP3 = "mp3"
     FORMAT_WAV = "wav"
     FORMAT_OGG = "ogg"
@@ -53,7 +54,9 @@ class HTTPFormat(Enum):
 
 
 def grpc_format_to_http_format(format: Format) -> HTTPFormat:
-    if format == Format.FORMAT_MP3:
+    if format == Format.FORMAT_RAW:
+        return HTTPFormat.FORMAT_RAW
+    elif format == Format.FORMAT_MP3:
         return HTTPFormat.FORMAT_MP3
     elif format == Format.FORMAT_WAV:
         return HTTPFormat.FORMAT_WAV
@@ -167,7 +170,9 @@ class TTSOptions:
 
 def output_format_to_mime_type(format: Format) -> str:
     http_format = grpc_format_to_http_format(format)
-    if http_format == HTTPFormat.FORMAT_MP3:
+    if http_format == HTTPFormat.FORMAT_RAW:
+        return "audio/basic"
+    elif http_format == HTTPFormat.FORMAT_MP3:
         return "audio/mpeg"
     elif http_format == HTTPFormat.FORMAT_WAV:
         return "audio/wav"
