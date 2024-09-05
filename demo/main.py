@@ -2,13 +2,12 @@ from __future__ import annotations
 from typing import AsyncGenerator, AsyncIterable, Generator, Iterable, Literal
 
 import asyncio
-import time
 import threading
 import select
 import sys
 
 import numpy as np
-import simpleaudio as sa
+import soundfile as sf
 
 from pyht.client import Client, TTSOptions
 from pyht.async_client import AsyncClient
@@ -18,29 +17,13 @@ from pyht.protos import api_pb2
 # === SYNC EXAMPLE ===
 
 
-def play_audio(data: Generator[bytes, None, None] | Iterable[bytes]):
-    buff_size = 10485760
-    ptr = 0
-    start_time = time.time()
-    buffer = np.empty(buff_size, np.float16)
-    audio = None
+def save_audio(data: Generator[bytes, None, None] | Iterable[bytes]):
+    chunks: bytearray = bytearray()
     for i, chunk in enumerate(data):
         if i == 0:
-            start_time = time.time()
             continue  # Drop the first response, we don't want a header.
-        elif i == 1:
-            print("First audio byte received in:", time.time() - start_time)
-        for sample in np.frombuffer(chunk, np.float16):
-            buffer[ptr] = sample
-            ptr += 1
-        if i == 5:
-            # Give a 4 sample worth of breathing room before starting
-            # playback
-            audio = sa.play_buffer(buffer, 1, 2, 24000)
-    approx_run_time = ptr / 24_000
-    time.sleep(max(approx_run_time - time.time() + start_time, 0))
-    if audio is not None:
-        audio.stop()
+        chunks.extend(chunk)
+    sf.write("output.wav", np.frombuffer(chunks, dtype=np.int16), 24000)
 
 
 def main(
@@ -51,6 +34,7 @@ def main(
     quality: Literal["fast"] | Literal["faster"],
     interactive: bool,
     use_async: bool,
+    use_http: bool,
 ):
     del use_async
 
@@ -61,10 +45,14 @@ def main(
     options = TTSOptions(voice=voice, format=api_pb2.FORMAT_WAV, quality=quality)
 
     # Get the streams
-    in_stream, out_stream = client.get_stream_pair(options)
+    if use_http:
+        voice_engine = "Play3.0"
+    else:
+        voice_engine = "PlayHT2.0"
+    in_stream, out_stream = client.get_stream_pair(options, voice_engine=voice_engine)
 
     # Start a player thread.
-    audio_thread = threading.Thread(None, play_audio, args=(out_stream,))
+    audio_thread = threading.Thread(None, save_audio, args=(out_stream,))
     audio_thread.start()
 
     # Send some text, play some audio.
@@ -76,13 +64,16 @@ def main(
     audio_thread.join()
     out_stream.close()
 
+    metrics = client.metrics()
+    print(str(metrics[-1].timers.get("time-to-first-audio")))
+
     # Maybe play around with an interactive session.
     if interactive:
         print("Starting interactive session.")
         print("Input an empty line to quit.")
         t = input("> ")
         while t:
-            play_audio(client.tts(t, options))
+            save_audio(client.tts(t, options))
             t = input("> ")
         print()
         print("Interactive session closed.")
@@ -95,31 +86,15 @@ def main(
 # === ASYNC EXAMPLE ===
 
 
-async def async_play_audio(data: AsyncGenerator[bytes, None] | AsyncIterable[bytes]):
-    buff_size = 10485760
-    ptr = 0
-    start_time = time.time()
-    buffer = np.empty(buff_size, np.float16)
-    audio = None
+async def async_save_audio(data: AsyncGenerator[bytes, None] | AsyncIterable[bytes]):
     i = -1
+    chunks: bytearray = bytearray()
     async for chunk in data:
         i += 1
         if i == 0:
-            start_time = time.time()
             continue  # Drop the first response, we don't want a header.
-        elif i == 1:
-            print("First audio byte received in:", time.time() - start_time)
-        for sample in np.frombuffer(chunk, np.float16):
-            buffer[ptr] = sample
-            ptr += 1
-        if i == 5:
-            # Give a 4 sample worth of breathing room before starting
-            # playback
-            audio = sa.play_buffer(buffer, 1, 2, 24000)
-    approx_run_time = ptr / 24_000
-    await asyncio.sleep(max(approx_run_time - time.time() + start_time, 0))
-    if audio is not None:
-        audio.stop()
+        chunks.extend(chunk)
+    sf.write("output.wav", np.frombuffer(chunks, dtype=np.int16), 24000)
 
 
 async def async_main(
@@ -130,6 +105,7 @@ async def async_main(
     quality: Literal["fast"] | Literal["faster"],
     interactive: bool,
     use_async: bool,
+    use_http: bool,
 ):
     del use_async
 
@@ -140,9 +116,13 @@ async def async_main(
     options = TTSOptions(voice=voice, format=api_pb2.FORMAT_WAV, quality=quality)
 
     # Get the streams
-    in_stream, out_stream = client.get_stream_pair(options)
+    if use_http:
+        voice_engine = "Play3.0"
+    else:
+        voice_engine = "PlayHT2.0"
+    in_stream, out_stream = client.get_stream_pair(options, voice_engine=voice_engine)
 
-    audio_task = asyncio.create_task(async_play_audio(out_stream))
+    audio_task = asyncio.create_task(async_save_audio(out_stream))
 
     # Send some text, play some audio.
     await in_stream(*text)
@@ -151,6 +131,9 @@ async def async_main(
     # cleanup
     await asyncio.wait_for(audio_task, 60)
     out_stream.close()
+
+    metrics = client.metrics()
+    print(str(metrics[-1].timers.get("time-to-first-audio")))
 
     async def get_input():
         while not select.select([sys.stdin], [], [], 0)[0]:
@@ -163,7 +146,7 @@ async def async_main(
         print("Input an empty line to quit.")
         t = await get_input()
         while t:
-            asyncio.ensure_future(async_play_audio(client.tts(t, options)))
+            asyncio.ensure_future(async_save_audio(client.tts(t, options)))
             t = await get_input()
         print()
         print("Interactive session closed.")
@@ -176,6 +159,10 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser("PyHT Streaming Demo")
+
+    parser.add_argument(
+        "--http", action="store_true", help="Use the HTTP API instead of gRPC.", dest="use_http"
+    )
 
     parser.add_argument(
         "--async", action="store_true", help="Use the asyncio client.", dest="use_async"

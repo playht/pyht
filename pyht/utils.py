@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import List
 import re
 
 
@@ -88,3 +89,13 @@ def split_text(
     if text:
         output.append(text.strip())
     return output
+
+
+def prepare_text(text: str | List[str], remove_ssml_tags: bool = True) -> List[str]:
+    if isinstance(text, str):
+        text = split_text(text)
+    if remove_ssml_tags:
+        text = [re.sub(r'<[^>]*>', '', x) for x in text]
+    text = [normalize(x) for x in text]
+    text = ensure_sentence_end(text)
+    return text

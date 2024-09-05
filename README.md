@@ -8,7 +8,7 @@
 - Use PlayHT's pre-build voices or create custom voice clones.
 - Stream text from LLM, and generate audio stream in real-time.
 - Supports WAV, MP3, PCM, Mulaw, FLAC, and OGG audio formats.
-- Supports 8KHz, 16KHz, 24KHz, 44.1KHz and 48KHz. 
+- Supports 8KHz, 16KHz, 24KHz, 44.1KHz and 48KHz.
 
 ## Requirements
 

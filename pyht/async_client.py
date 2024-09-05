@@ -5,11 +5,11 @@ import time
 from typing import Any, AsyncGenerator, AsyncIterable, AsyncIterator, Coroutine
 
 import asyncio
-from dataclasses import dataclass
+import aiohttp
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import io
 import os
-import re
 import sys
 import tempfile
 
@@ -19,10 +19,12 @@ from grpc.aio import Channel, Call, insecure_channel, secure_channel, UnaryStrea
 from grpc import ssl_channel_credentials, StatusCode
 
 from .telemetry import Telemetry, Metrics
-from .client import TTSOptions, CongestionCtrl, CLIENT_RETRY_OPTIONS
+from .client import TTSOptions, CongestionCtrl, CLIENT_RETRY_OPTIONS, \
+        output_format_to_mime_type, http_prepare_json, _audio_begins_at
+from .inference_coordinates import InferenceCoordinates, InferenceCoordinatesOptions
 from .lease import Lease, LeaseFactory
 from .protos import api_pb2, api_pb2_grpc
-from .utils import ensure_sentence_end, normalize, split_text, SENTENCE_END_REGEX
+from .utils import SENTENCE_END_REGEX, prepare_text
 
 
 TtsUnaryStream = UnaryStreamCall[api_pb2.TtsRequest, api_pb2.TtsResponse]
@@ -50,14 +52,19 @@ class AsyncClient:
     @dataclass
     class AdvancedOptions:
         api_url: str = "https://api.play.ht/api"
+        congestion_ctrl: CongestionCtrl = CongestionCtrl.OFF
+        metrics_buffer_size: int = 1000
+        remove_ssml_tags: bool = False
+
+        # gRPC (PlayHT2.0 and earlier)
         grpc_addr: str | None = None
         insecure: bool = False
         fallback_enabled: bool = False
         auto_refresh_lease: bool = True
         disable_lease_disk_cache: bool = False
-        congestion_ctrl: CongestionCtrl = CongestionCtrl.OFF
-        metrics_buffer_size: int = 1000
-        remove_ssml_tags: bool = False
+
+        # HTTP (Play3.0)
+        inference_coordinates_options: InferenceCoordinatesOptions = field(default_factory=InferenceCoordinatesOptions)
 
     def __init__(
         self,
@@ -68,6 +75,7 @@ class AsyncClient:
     ):
         assert user_id, "user_id is required"
         assert api_key, "api_key is required"
+
         self._advanced = advanced or self.AdvancedOptions()
 
         async def lease_factory() -> Lease:
@@ -95,9 +103,47 @@ class AsyncClient:
             self._lease_loop_future = asyncio.Future()
             self._lease_loop_future.set_result(None)
         self._telemetry = Telemetry(self._advanced.metrics_buffer_size)
+        self._user_id = user_id
+        self._api_key = api_key
+        self._inference_coordinates = None
+
+        if self._advanced.congestion_ctrl == CongestionCtrl.STATIC_MAR_2023:
+            self._max_attempts = 3
+            self._backoff = 0.05
+        else:
+            self._max_attempts = 1
+            self._backoff = 0
 
         if auto_connect and not self._advanced.auto_refresh_lease:
             asyncio.ensure_future(self.refresh_lease())
+        if auto_connect:
+            asyncio.ensure_future(self.warmup())
+
+    async def ensure_inference_coordinates(self):
+        if self._inference_coordinates is None:
+            if self._advanced.inference_coordinates_options.coordinates_generator_function_async is not None:
+                self._inference_coordinates = await self._advanced.inference_coordinates_options.\
+                        coordinates_generator_function_async(self._user_id, self._api_key,
+                                                             self._advanced.inference_coordinates_options)
+            else:
+                self._inference_coordinates = await InferenceCoordinates.\
+                    get_async(self._user_id, self._api_key,
+                              self._advanced.inference_coordinates_options)
+
+        assert self._inference_coordinates is not None, "No connection"
+
+    async def warmup(self):
+        await self.ensure_inference_coordinates()
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                assert self._inference_coordinates is not None, "No connection"
+                async with session.options(self._inference_coordinates.address,
+                                           headers={"Origin": "https://play.ht",
+                                                    "Access-Control-Request-Method": "POST"}) as resp:
+                    resp.raise_for_status()
+        except Exception as e:
+            logging.warning(f"Failed to warmup: {e}")
 
     @classmethod
     async def _lease_cache_read(cls) -> bytes | None:
@@ -205,7 +251,10 @@ class AsyncClient:
     ) -> AsyncIterable[bytes]:
         metrics = self._telemetry.start("tts-request")
         try:
-            return self._tts(text, options, voice_engine, metrics)
+            if voice_engine is None or voice_engine == "Play3.0":
+                return self._tts_http(text, options, voice_engine, metrics)
+            else:
+                return self._tts(text, options, voice_engine, metrics)
         except Exception as e:
             metrics.finish_error(str(e))
             raise e
@@ -218,30 +267,22 @@ class AsyncClient:
         metrics: Metrics,
         context: AsyncContext | None = None
     ) -> AsyncIterable[bytes]:
+        if voice_engine == "Play3.0":
+            raise ValueError("Play3.0 is only supported in the HTTP API; otherwise use the gRPC API.")
+
         start = time.perf_counter()
         await self.refresh_lease()
         async with self._lock:
-            assert self._lease is not None and self._rpc is not None
+            assert self._lease is not None and self._rpc is not None, "No connection"
             lease_data = self._lease.data
 
-        if isinstance(text, str):
-            text = split_text(text)
-        if self._advanced.remove_ssml_tags:
-            text = [re.sub(r'<[^>]*>', '', x) for x in text]
-        text = [normalize(x) for x in text]
-        text = ensure_sentence_end(text)
+        text = prepare_text(text, self._advanced.remove_ssml_tags)
+        metrics.append("text", str(text)).append("endpoint", str(self._rpc[0]))
 
         request = api_pb2.TtsRequest(params=options.tts_params(text, voice_engine), lease=lease_data)
 
-        max_attempts = 1
-        backoff = 0
-        if self._advanced.congestion_ctrl == CongestionCtrl.STATIC_MAR_2023:
-            max_attempts = 3
-            backoff = 0.05
-
-        for attempt in range(1, max_attempts + 1):
+        for attempt in range(1, self._max_attempts + 1):
             try:
-                metrics.append("text", str(request.params.text)).append("endpoint", str(self._rpc[0]))
                 stub = api_pb2_grpc.TtsStub(self._rpc[1])
                 stream: TtsUnaryStream = stub.Tts(request)
                 chunk_idx = -1
@@ -260,18 +301,20 @@ class AsyncClient:
                 if error_code not in {StatusCode.RESOURCE_EXHAUSTED, StatusCode.UNAVAILABLE}:
                     raise
 
-                if attempt < max_attempts:
-                    logging.debug(f"Retrying in {backoff * 1000} sec ({attempt} attempts so far)... ({error_code})")
+                if attempt < self._max_attempts:
+                    logging.debug(f"Retrying in {self._backoff*1000} sec ({attempt} attempts so far); ({error_code})")
                     metrics.inc("retry").append("retry.reason", str(error_code))
                     metrics.start_timer("retry-backoff")
-                    if backoff > 0:
-                        await asyncio.sleep(backoff)
+                    if self._backoff > 0:
+                        await asyncio.sleep(self._backoff)
                     metrics.finish_timer("retry-backoff")
                     continue
 
                 if self._fallback_rpc is None:
                     raise
 
+                # We log fallbacks to give customers an extra signal that they should scale up their on-prem appliance
+                # (e.g. by paying for more GPU quota)
                 logging.info(f"Falling back to {self._fallback_rpc[0]} because {self._rpc[0]} threw: {error_code}")
                 metrics.inc("fallback").append("fallback.reason", str(error_code))
                 try:
@@ -290,7 +333,69 @@ class AsyncClient:
                     metrics.finish_ok()
                     break
                 except grpc.RpcError as fallback_e:
+                    metrics.finish_error(str(fallback_e))
                     raise fallback_e from e
+
+    async def _tts_http(
+        self,
+        text: str | list[str],
+        options: TTSOptions,
+        voice_engine: str | None,
+        metrics: Metrics,
+        context: AsyncContext | None = None
+    ) -> AsyncIterable[bytes]:
+        if voice_engine is None:
+            voice_engine = "Play3.0"
+        if voice_engine != "Play3.0":
+            raise ValueError("Only Play3.0 is supported in the HTTP API; otherwise use the gRPC API.")
+
+        start = time.perf_counter()
+        await self.ensure_inference_coordinates()
+
+        text = prepare_text(text, self._advanced.remove_ssml_tags)
+        assert self._inference_coordinates is not None, "No connection"
+        metrics.append("text", str(text)).append("endpoint", str(self._inference_coordinates.address))
+
+        for attempt in range(1, self._max_attempts + 1):
+            try:
+                async with aiohttp.ClientSession() as session:
+                    assert self._inference_coordinates is not None, "No connection"
+                    async with session.post(
+                            self._inference_coordinates.address,
+                            headers={
+                                "accept": output_format_to_mime_type(options.format),
+                            },
+                            json=http_prepare_json(text, options, voice_engine),
+                            chunked=True
+                    ) as response:
+                        if response.status != 200:
+                            raise Exception(f"HTTP {response.status}: {response.text()}", response.status)
+                        chunk_idx = -1
+                        async for chunk in response.content.iter_any():
+                            chunk_idx += 1
+                            if chunk_idx == _audio_begins_at(options.format):
+                                metrics.set_timer("time-to-first-audio", time.perf_counter() - start)
+                            yield chunk
+                        metrics.finish_ok()
+                        break
+            except Exception as e:
+                logging.debug(f"Error: {e}")
+                if e.args[1] not in {429, 503}:  # HTTP equivalent to gRPC RESOURCE_EXHAUSTED, UNAVAILABLE
+                    metrics.finish_error(str(e))
+                    raise
+
+                if attempt < self._max_attempts:
+                    # It's poor customer experience to show internal details about retries, so we only debug log here.
+                    logging.debug(f"Retrying in {self._backoff*1000} sec ({attempt} attempts so far); ({e.args[1]})")
+                    metrics.inc("retry").append("retry.reason", str(e.args[1]))
+                    metrics.start_timer("retry-backoff")
+                    if self._backoff > 0:
+                        await asyncio.sleep(self._backoff)
+                    metrics.finish_timer("retry-backoff")
+                    continue
+
+                metrics.finish_error(str(e))
+                raise
 
     def get_stream_pair(
         self,
@@ -445,7 +550,3 @@ class _OutputStream(AsyncIterator[bytes]):
 
     def close(self):
         self._close.set()
-
-
-def _audio_begins_at(fmt: api_pb2.Format) -> int:
-    return 0 if fmt in {api_pb2.Format.FORMAT_RAW, api_pb2.Format.FORMAT_MULAW} else 1
