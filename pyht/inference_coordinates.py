@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import asyncio
-import aiohttp
 from dataclasses import dataclass
 import requests
 from threading import Timer
 import time
 from typing import Callable, Awaitable, Optional
+
+import aiohttp
 
 
 @dataclass

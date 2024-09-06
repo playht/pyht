@@ -1,6 +1,7 @@
 from __future__ import annotations
-from typing import List
+
 import re
+from typing import List
 
 
 SENTENCE_END_REGEX = re.compile('.*[-.!?;:…]$')
