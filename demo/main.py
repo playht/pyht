@@ -1,16 +1,16 @@
 from __future__ import annotations
-from typing import AsyncGenerator, AsyncIterable, Generator, Iterable, Literal
 
 import asyncio
-import threading
 import select
 import sys
+import threading
+from typing import AsyncGenerator, AsyncIterable, Generator, Iterable, Literal
 
 import numpy as np
 import soundfile as sf
 
-from pyht.client import Client, TTSOptions
 from pyht.async_client import AsyncClient
+from pyht.client import Client, TTSOptions
 from pyht.protos import api_pb2
 
 

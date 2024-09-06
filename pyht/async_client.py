@@ -1,30 +1,29 @@
 from __future__ import annotations
 
-import logging
-import time
-from typing import Any, AsyncGenerator, AsyncIterable, AsyncIterator, Coroutine
-
 import asyncio
-import aiohttp
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import io
+import logging
 import os
 import sys
 import tempfile
+import time
+from typing import Any, AsyncGenerator, AsyncIterable, AsyncIterator, Coroutine
 
+import aiohttp
 import filelock
 import grpc
-from grpc.aio import Channel, Call, insecure_channel, secure_channel, UnaryStreamCall
 from grpc import ssl_channel_credentials, StatusCode
+from grpc.aio import Call, Channel, insecure_channel, secure_channel, UnaryStreamCall
 
-from .telemetry import Telemetry, Metrics
-from .client import TTSOptions, CongestionCtrl, CLIENT_RETRY_OPTIONS, \
-        output_format_to_mime_type, http_prepare_json, _audio_begins_at
+from .client import _audio_begins_at, CLIENT_RETRY_OPTIONS, CongestionCtrl, \
+        http_prepare_dict, output_format_to_mime_type, TTSOptions
 from .inference_coordinates import InferenceCoordinates, InferenceCoordinatesOptions
 from .lease import Lease, LeaseFactory
 from .protos import api_pb2, api_pb2_grpc
-from .utils import SENTENCE_END_REGEX, prepare_text
+from .telemetry import Metrics, Telemetry
+from .utils import prepare_text, SENTENCE_END_REGEX
 
 
 TtsUnaryStream = UnaryStreamCall[api_pb2.TtsRequest, api_pb2.TtsResponse]
@@ -365,7 +364,7 @@ class AsyncClient:
                             headers={
                                 "accept": output_format_to_mime_type(options.format),
                             },
-                            json=http_prepare_json(text, options, voice_engine),
+                            json=http_prepare_dict(text, options, voice_engine),
                             chunked=True
                     ) as response:
                         if response.status != 200:

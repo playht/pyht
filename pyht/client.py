@@ -1,30 +1,29 @@
 from __future__ import annotations
 
-import logging
-import time
-from enum import Enum
-from typing import Generator, Iterable, Iterator, List, Tuple, Dict, Any
-
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from enum import Enum
+from typing import Any, Dict, Generator, Iterable, Iterator, List, Tuple
 import io
 import json
+import logging
 import os
 import queue
-import requests
 import tempfile
 import threading
+import time
 
 import filelock
 import grpc
 from grpc import Channel, insecure_channel, secure_channel, ssl_channel_credentials, StatusCode
+import requests
 
 from .inference_coordinates import InferenceCoordinates, InferenceCoordinatesOptions
-from .telemetry import Telemetry, Metrics
 from .lease import Lease, LeaseFactory
 from .protos import api_pb2, api_pb2_grpc
 from .protos.api_pb2 import Format
-from .utils import SENTENCE_END_REGEX, prepare_text
+from .telemetry import Metrics, Telemetry
+from .utils import prepare_text, SENTENCE_END_REGEX
 
 
 CLIENT_RETRY_OPTIONS = [
@@ -70,14 +69,6 @@ def grpc_format_to_http_format(format: Format) -> HTTPFormat:
         raise ValueError(f"Unsupported format for HTTP API: {format}")
 
 
-class HTTPQuality(Enum):
-    QUALITY_LOW = "low"
-    QUALITY_DRAFT = "draft"
-    QUALITY_MEDIUM = "medium"
-    QUALITY_HIGH = "high"
-    QUALITY_PREMIUM = "premium"
-
-
 class Language(Enum):
     AFRIKAANS = "afrikaans"
     ALBANIAN = "albanian"
@@ -116,7 +107,6 @@ class Language(Enum):
     UKRAINIAN = "ukrainian"
     URDU = "urdu"
     XHOSA = "xhosa"
-    OTHER = "other"
 
 
 @dataclass
@@ -124,8 +114,9 @@ class TTSOptions:
     voice: str
     format: Format = Format.FORMAT_WAV
     sample_rate: int = 24000
-    quality: str | HTTPQuality = "faster"
+    quality: str = ""  # DEPRECATED (use sample rate to adjust audio quality)
     speed: float = 1.0
+    seed: int | None = None
     temperature: float | None = None
     top_p: float | None = None
     text_guidance: float | None = None
@@ -133,24 +124,14 @@ class TTSOptions:
     style_guidance: float | None = None
     repetition_penalty: float | None = None
     disable_stabilization: bool = False  # only applies to PlayHT2.0
-    seed: int | None = None
-    language: Language | None = None  # only applies to Play3.0
+    language: Language | None = Language.ENGLISH  # only applies to Play3.0
 
     def tts_params(self, text: list[str], voice_engine: str | None) -> api_pb2.TtsParams:
-        if isinstance(self.quality, HTTPQuality):
-            quality = self.quality.value.lower()
-        else:
-            quality = self.quality.lower()
-        _quality = api_pb2.QUALITY_DRAFT
-
-        if voice_engine == "PlayHT2.0" and quality != "faster":
-            _quality = api_pb2.QUALITY_MEDIUM
-
         params = api_pb2.TtsParams(
             text=text,
             voice=self.voice,
             format=self.format,
-            quality=_quality,
+            quality=api_pb2.QUALITY_DRAFT,  # DEPRECATED (use sample rate to adjust audio quality)
             sample_rate=self.sample_rate,
             speed=self.speed,
         )
@@ -186,13 +167,10 @@ def output_format_to_mime_type(format: Format) -> str:
         return "audio/mpeg"  # mp3 by default
 
 
-def http_prepare_json(text: List[str], options: TTSOptions, voice_engine: str) -> Dict[str, Any]:
-    if type(options.quality) != HTTPQuality:
-        options.quality = HTTPQuality.QUALITY_DRAFT
+def http_prepare_dict(text: List[str], options: TTSOptions, voice_engine: str) -> Dict[str, Any]:
     return {
         "text": text,
         "voice": options.voice,
-        "quality": options.quality.value,
         "output_format": grpc_format_to_http_format(options.format).value,
         "speed": options.speed,
         "sample_rate": options.sample_rate,
@@ -539,7 +517,7 @@ class Client:
                         headers={
                             "accept": output_format_to_mime_type(options.format),
                         },
-                        json=http_prepare_json(text, options, voice_engine),
+                        json=http_prepare_dict(text, options, voice_engine),
                         stream=True
                     )
                 if response.status_code != 200:
