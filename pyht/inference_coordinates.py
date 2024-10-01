@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 import requests
-from threading import Timer
 import time
 from typing import Callable, Awaitable, Optional
 
@@ -26,6 +25,7 @@ class InferenceCoordinatesOptions:
 class InferenceCoordinates:
     address: str
     expires_ms: int
+    refresh_at_ms: int = -1
 
     @classmethod
     def default_generator(cls, user_id: str, api_key: str,
@@ -62,12 +62,9 @@ class InferenceCoordinates:
             else:
                 coordinates = cls.default_generator(user_id, api_key, options)
             # schedule next refresh
-            refresh_delay_ms = max(options.coordinates_expiration_minimal_frequency_ms,
-                                   coordinates.expires_ms - time.time_ns() // 1_000_000 -
-                                   options.coordinates_expiration_advance_refresh_ms)
-            timer = Timer(refresh_delay_ms / 1_000, cls.get, args=(user_id, api_key, options, attempt))
-            timer.daemon = True
-            timer.start()
+            coordinates.refresh_at_ms = min(coordinates.expires_ms - options.coordinates_expiration_advance_refresh_ms,
+                                            time.time_ns() // 1000000 +
+                                            options.coordinates_expiration_minimal_frequency_ms)
             return coordinates
         except Exception as e:
             if attempt >= options.coordinates_get_api_call_max_retries:
@@ -85,12 +82,9 @@ class InferenceCoordinates:
             else:
                 coordinates = await cls.default_generator_async(user_id, api_key, options)
             # schedule next refresh
-            refresh_delay_ms = max(options.coordinates_expiration_minimal_frequency_ms,
-                                   coordinates.expires_ms - time.time_ns() // 1_000_000 -
-                                   options.coordinates_expiration_advance_refresh_ms)
-            timer = Timer(refresh_delay_ms / 1_000, cls.get_async, args=(user_id, api_key, options, attempt))
-            timer.daemon = True
-            timer.start()
+            coordinates.refresh_at_ms = min(coordinates.expires_ms - options.coordinates_expiration_advance_refresh_ms,
+                                            time.time_ns() // 1000000 +
+                                            options.coordinates_expiration_minimal_frequency_ms)
             return coordinates
         except Exception as e:
             if attempt >= options.coordinates_get_api_call_max_retries:
