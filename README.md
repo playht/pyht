@@ -81,7 +81,8 @@ The `tts` method takes the following arguments:
 - `options`: The options to use for the TTS request.
     - a `TTSOptions` object (see below).
 - `voice_engine`: The voice engine to use for the TTS request.
-    - `Play3.0` (default): Our latest multilingual model, streaming audio over HTTP.
+    - `Play3.0` (default): Our latest multilingual model, streaming audio over HTTP. (NOTE that it is `Play` not `PlayHT` like previous voice engines)
+    - `Play3.0-ws`: Our latest multilingual model, streaming audio over WebSockets. (NOTE that it is `Play` not `PlayHT` like previous voice engines)
     - `PlayHT2.0`: Our legacy English-only model, streaming audio over gRPC.
 
 ### TTSOptions
@@ -110,11 +111,11 @@ The `TTSOptions` class is used to specify the options for the TTS request. It ha
     - `temperature`: The temperature of the model, a float.
     - `top_p`: The top_p of the model, a float.
     - `text_guidance`: The text_guidance of the model, a float.
-    - `voice_guidance` (PlayHT2.0 only): The voice_guidance of the model, a float.
-    - `style_guidance` (Play3.0 only): The style_guidance of the model, a float.
+    - `voice_guidance` The voice_guidance of the model, a float.
+    - `style_guidance` (Play3.0 and Play3.0-ws only): The style_guidance of the model, a float.
     - `repetition_penalty`: The repetition_penalty of the model, a float.
 - `disable_stabilization` (PlayHT2.0 only): Disable the audio stabilization process, a boolean (default False).
-- `language` (Play3.0 only): The language of the text to be spoken, a `Language` enum value or None (default English).
+- `language` (Play3.0 and Play3.0-ws only): The language of the text to be spoken, a `Language` enum value or None (default English).
     - `AFRIKAANS`
     - `ALBANIAN`
     - `AMHARIC`
@@ -179,10 +180,17 @@ To run with the HTTP API, which uses our latest Play3.0 model, use the `--http` 
 python demo/main.py --user $PLAY_HT_USER_ID --key $PLAY_HT_API_KEY --text "Hello from Play!" --http
 ```
 
-The HTTP API can also be used with the async client:
+To run with the WebSockets API, which also uses our latest Play3.0 model, use the `--ws` flag:
+
+```shell
+python demo/main.py --user $PLAY_HT_USER_ID --key $PLAY_HT_API_KEY --text "Hello from Play!" --ws
+```
+
+The HTTP and WebSockets APIs can also be used with the async client:
 
 ```shell
 python demo/main.py --user $PLAY_HT_USER_ID --key $PLAY_HT_API_KEY --text "Hello from Play!" --http --async
+python demo/main.py --user $PLAY_HT_USER_ID --key $PLAY_HT_API_KEY --text "Hello from Play!" --ws --async
 ```
 
 Alternatively, you can run the demo in interactive mode:

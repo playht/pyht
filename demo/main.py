@@ -4,14 +4,10 @@ import asyncio
 import select
 import sys
 import threading
-from typing import AsyncGenerator, AsyncIterable, Generator, Iterable, Literal
-
-import numpy as np
-import soundfile as sf
+from typing import AsyncGenerator, AsyncIterable, Generator, Iterable
 
 from pyht.async_client import AsyncClient
-from pyht.client import Client, TTSOptions
-from pyht.protos import api_pb2
+from pyht.client import Client, TTSOptions, Language
 
 
 # === SYNC EXAMPLE ===
@@ -19,11 +15,10 @@ from pyht.protos import api_pb2
 
 def save_audio(data: Generator[bytes, None, None] | Iterable[bytes]):
     chunks: bytearray = bytearray()
-    for i, chunk in enumerate(data):
-        if i == 0:
-            continue  # Drop the first response, we don't want a header.
+    for chunk in data:
         chunks.extend(chunk)
-    sf.write("output.wav", np.frombuffer(chunks, dtype=np.int16), 24000)
+    with open("output.wav", "wb") as f:
+        f.write(chunks)
 
 
 def main(
@@ -31,10 +26,12 @@ def main(
     key: str,
     text: Iterable[str],
     voice: str,
-    quality: Literal["fast"] | Literal["faster"],
+    language: str,
     interactive: bool,
     use_async: bool,
     use_http: bool,
+    use_ws: bool,
+    use_grpc: bool,
 ):
     del use_async
 
@@ -42,11 +39,13 @@ def main(
     client = Client(user, key)
 
     # Set the speech options
-    options = TTSOptions(voice=voice, format=api_pb2.FORMAT_WAV, quality=quality)
+    options = TTSOptions(voice=voice, language=Language(language))
 
     # Get the streams
     if use_http:
         voice_engine = "Play3.0"
+    elif use_ws:
+        voice_engine = "Play3.0-ws"
     else:
         voice_engine = "PlayHT2.0"
     in_stream, out_stream = client.get_stream_pair(options, voice_engine=voice_engine)
@@ -87,14 +86,11 @@ def main(
 
 
 async def async_save_audio(data: AsyncGenerator[bytes, None] | AsyncIterable[bytes]):
-    i = -1
     chunks: bytearray = bytearray()
     async for chunk in data:
-        i += 1
-        if i == 0:
-            continue  # Drop the first response, we don't want a header.
         chunks.extend(chunk)
-    sf.write("output.wav", np.frombuffer(chunks, dtype=np.int16), 24000)
+    with open("output.wav", "wb") as f:
+        f.write(chunks)
 
 
 async def async_main(
@@ -102,10 +98,12 @@ async def async_main(
     key: str,
     text: Iterable[str],
     voice: str,
-    quality: Literal["fast"] | Literal["faster"],
+    language: str,
     interactive: bool,
     use_async: bool,
     use_http: bool,
+    use_ws: bool,
+    use_grpc: bool,
 ):
     del use_async
 
@@ -113,11 +111,13 @@ async def async_main(
     client = AsyncClient(user, key)
 
     # Set the speech options
-    options = TTSOptions(voice=voice, format=api_pb2.FORMAT_WAV, quality=quality)
+    options = TTSOptions(voice=voice, language=Language(language))
 
     # Get the streams
     if use_http:
         voice_engine = "Play3.0"
+    elif use_ws:
+        voice_engine = "Play3.0-ws"
     else:
         voice_engine = "PlayHT2.0"
     in_stream, out_stream = client.get_stream_pair(options, voice_engine=voice_engine)
@@ -160,8 +160,15 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser("PyHT Streaming Demo")
 
-    parser.add_argument(
-        "--http", action="store_true", help="Use the HTTP API instead of gRPC.", dest="use_http"
+    api_group = parser.add_mutually_exclusive_group(required=True)
+    api_group.add_argument(
+        "--ws", action="store_true", help="Use the WebSocket API with the 3.0 model.", dest="use_ws"
+    )
+    api_group.add_argument(
+        "--http", action="store_true", help="Use the HTTP API with the 3.0 model.", dest="use_http"
+    )
+    api_group.add_argument(
+        "--grpc", action="store_true", help="Use the gRPC API with the 2.0 model.", dest="use_grpc"
     )
 
     parser.add_argument(
@@ -182,11 +189,11 @@ if __name__ == "__main__":
         help="Voice manifest URI",
     )
     parser.add_argument(
-        "--quality",
-        "-q",
-        choices=["fast", "faster"],
-        default="faster",
-        help="Quality of the generated audio",
+        "--language",
+        "-l",
+        choices=[lang.value for lang in Language],
+        default="english",
+        help="Language of the text to be spoken.",
     )
 
     input_group = parser.add_mutually_exclusive_group(required=True)

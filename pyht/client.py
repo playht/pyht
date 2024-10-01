@@ -12,6 +12,8 @@ import queue
 import tempfile
 import threading
 import time
+import uuid
+from websockets.sync.client import connect
 
 import filelock
 import grpc
@@ -225,7 +227,7 @@ class Client:
         auto_refresh_lease: bool = True
         disable_lease_disk_cache: bool = False
 
-        # HTTP (Play3.0)
+        # HTTP/WebSocket (Play3.0)
         inference_coordinates_options: InferenceCoordinatesOptions = field(default_factory=InferenceCoordinatesOptions)
 
     def __init__(
@@ -263,6 +265,7 @@ class Client:
         self._user_id = user_id
         self._api_key = api_key
         self._inference_coordinates = None
+        self._ws = None
 
         if self._advanced.congestion_ctrl == CongestionCtrl.STATIC_MAR_2023:
             self._max_attempts = 3
@@ -276,7 +279,7 @@ class Client:
             self.warmup()
 
     def ensure_inference_coordinates(self):
-        if self._inference_coordinates is None:
+        if self._inference_coordinates is None or self._inference_coordinates.refresh_at_ms < time.time_ns() // 1000000:
             if self._advanced.inference_coordinates_options.coordinates_generator_function is not None:
                 self._inference_coordinates = self._advanced.inference_coordinates_options.\
                     coordinates_generator_function(self._user_id, self._api_key,
@@ -410,13 +413,15 @@ class Client:
         try:
             if voice_engine is None or voice_engine == "Play3.0":
                 return self._tts_http(text, options, voice_engine, metrics)
+            elif voice_engine == "Play3.0-ws":
+                return self._tts_ws(text, options, voice_engine, metrics)
             else:
-                return self._tts(text, options, voice_engine, metrics)
+                return self._tts_grpc(text, options, voice_engine, metrics)
         except Exception as e:
             metrics.finish_error(str(e))
             raise e
 
-    def _tts(
+    def _tts_grpc(
             self,
             text: str | List[str],
             options: TTSOptions,
@@ -532,7 +537,9 @@ class Client:
                 break
             except Exception as e:
                 logging.debug(f"Error: {e}")
-                if e.args[1] not in {429, 503}:  # HTTP equivalent to gRPC RESOURCE_EXHAUSTED, UNAVAILABLE
+                if e.args[1] == "401":
+                    self.ensure_inference_coordinates()
+                elif e.args[1] not in {429, 503}:  # HTTP equivalent to gRPC RESOURCE_EXHAUSTED, UNAVAILABLE
                     metrics.finish_error(str(e))
                     raise
 
@@ -546,6 +553,61 @@ class Client:
                     metrics.finish_timer("retry-backoff")
                     continue
 
+                metrics.finish_error(str(e))
+                raise
+
+    def _tts_ws(
+            self,
+            text: str | List[str],
+            options: TTSOptions,
+            voice_engine: str | None,
+            metrics: Metrics
+    ) -> Iterable[bytes]:
+        if voice_engine is None:
+            voice_engine = "Play3.0-ws"
+        if voice_engine != "Play3.0-ws":
+            raise ValueError("Only Play3.0-ws is supported in the WebSocket API")
+
+        start = time.perf_counter()
+        self.ensure_inference_coordinates()
+
+        text = prepare_text(text, self._advanced.remove_ssml_tags)
+        assert self._inference_coordinates is not None, "No connection"
+        metrics.append("text", str(text)).append("endpoint", str(self._inference_coordinates.address))
+        request_id = str(uuid.uuid4())
+        json_data = http_prepare_dict(text, options, voice_engine)
+        json_data["request_id"] = request_id
+
+        for attempt in range(1, self._max_attempts + 1):
+            try:
+                assert self._inference_coordinates is not None, "No connection"
+                ws_address = self._inference_coordinates.address.replace("https", "wss").replace("stream", "ws")
+                if self._ws is None:
+                    self._ws = connect(ws_address)
+                self._ws.send(json.dumps(json_data))
+                chunk_idx = -1
+                for chunk in self._ws:
+                    chunk_idx += 1
+                    if isinstance(chunk, str):
+                        break
+                    elif chunk_idx == _audio_begins_at(options.format):
+                        metrics.set_timer("time-to-first-audio", time.perf_counter() - start)
+                    yield chunk
+                metrics.finish_ok()
+                break
+            except Exception as e:
+                logging.debug(f"Error: {e}")
+                if attempt < self._max_attempts:
+                    # It's poor customer experience to show internal details about retries, so we only debug log here.
+                    logging.debug(f"Retrying in {self._backoff*1000} ms ({attempt} attempts so far); ({e.args[1]})")
+                    metrics.inc("retry").append("retry.reason", str(e.args[1]))
+                    metrics.start_timer("retry-backoff")
+                    if self._backoff > 0:
+                        time.sleep(self._backoff)
+                    metrics.finish_timer("retry-backoff")
+                    # In case it was an expired token, refresh it
+                    self.ensure_inference_coordinates()
+                    continue
                 metrics.finish_error(str(e))
                 raise
 
