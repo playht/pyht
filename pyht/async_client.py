@@ -272,7 +272,7 @@ class AsyncClient:
         metrics: Metrics,
         context: AsyncContext | None = None
     ) -> AsyncIterable[bytes]:
-        if voice_engine.startswith("Play3.0"):
+        if voice_engine is not None and voice_engine.startswith("Play3.0"):
             raise ValueError("Play3.0-* models are only supported in the HTTP and WebSocket APIs, not in the gRPC API.")
 
         start = time.perf_counter()
