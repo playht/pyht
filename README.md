@@ -1,10 +1,12 @@
 # PlayHT API SDK
 
-**pyht** is a Python SDK for the [PlayHT's AI Text-to-Speech API](https://play.ht/text-to-speech-api/). PlayHT builds conversational voice AI models for realtime use cases. With **pyht**, you can easily convert text into high-quality audio streams in humanlike voice.
+**pyht** is a Python SDK for [PlayHT's AI Text-to-Speech API](https://play.ht/text-to-speech-api/). PlayHT builds conversational voice AI models for realtime use cases. With **pyht**, you can easily convert text into high-quality audio streams with humanlike voices.
+
+Currently the library supports only streaming text-to-speech. For the full set of functionalities provided by the PlayHT API such as [Voice Cloning](https://docs.play.ht/reference/api-create-instant-voice-clone), see the [PlayHT docs](https://docs.play.ht/reference/api-getting-started)
 
 ## Features
 
-- Stream text-to-speech in real-time.
+- Stream text-to-speech in real-time, synchronous or asynchronous.
 - Use PlayHT's pre-built voices or create custom voice clones.
 - Stream text from LLM, and generate audio stream in real-time.
 - Supports WAV, MP3, Mulaw, FLAC, and OGG audio formats as well as raw audio.
@@ -17,10 +19,7 @@
 - `filelock`
 - `grpc`
 - `requests`
-
-Demo requirements:
-- `numpy`
-- `soundfile`
+- `websockets`
 
 ## Installation
 
@@ -81,9 +80,9 @@ The `tts` method takes the following arguments:
 - `options`: The options to use for the TTS request.
     - a `TTSOptions` object (see below).
 - `voice_engine`: The voice engine to use for the TTS request.
-    - `Play3.0` (default): Our latest multilingual model, streaming audio over HTTP. (NOTE that it is `Play` not `PlayHT` like previous voice engines)
-    - `Play3.0-ws`: Our latest multilingual model, streaming audio over WebSockets. (NOTE that it is `Play` not `PlayHT` like previous voice engines)
-    - `PlayHT2.0`: Our legacy English-only model, streaming audio over gRPC.
+    - `Play3.0-mini-http` (default): Our latest multilingual model, streaming audio over HTTP. (NOTE that it is `Play` not `PlayHT` like previous voice engines)
+    - `Play3.0-mini-ws`: Our latest multilingual model, streaming audio over WebSockets. (NOTE that it is `Play` not `PlayHT` like previous voice engines)
+    - `PlayHT2.0-turbo`: Our legacy English-only model, streaming audio over gRPC.
 
 ### TTSOptions
 
@@ -112,10 +111,10 @@ The `TTSOptions` class is used to specify the options for the TTS request. It ha
     - `top_p`: The top_p of the model, a float.
     - `text_guidance`: The text_guidance of the model, a float.
     - `voice_guidance` The voice_guidance of the model, a float.
-    - `style_guidance` (Play3.0 and Play3.0-ws only): The style_guidance of the model, a float.
+    - `style_guidance` (Play3.0-mini-http and Play3.0-mini-ws only): The style_guidance of the model, a float.
     - `repetition_penalty`: The repetition_penalty of the model, a float.
-- `disable_stabilization` (PlayHT2.0 only): Disable the audio stabilization process, a boolean (default False).
-- `language` (Play3.0 and Play3.0-ws only): The language of the text to be spoken, a `Language` enum value or None (default English).
+- `disable_stabilization` (PlayHT2.0-turbo only): Disable the audio stabilization process, a boolean (default False).
+- `language` (Play3.0-mini-http and Play3.0-mini-ws only): The language of the text to be spoken, a `Language` enum value or None (default English).
     - `AFRIKAANS`
     - `ALBANIAN`
     - `AMHARIC`
@@ -174,13 +173,13 @@ To run with the asyncio client, use the `--async` flag:
 python demo/main.py --user $PLAY_HT_USER_ID --key $PLAY_HT_API_KEY --text "Hello from Play!" --async
 ```
 
-To run with the HTTP API, which uses our latest Play3.0 model, use the `--http` flag:
+To run with the HTTP API, which uses our latest Play3.0-mini model, use the `--http` flag:
 
 ```shell
 python demo/main.py --user $PLAY_HT_USER_ID --key $PLAY_HT_API_KEY --text "Hello from Play!" --http
 ```
 
-To run with the WebSockets API, which also uses our latest Play3.0 model, use the `--ws` flag:
+To run with the WebSockets API, which also uses our latest Play3.0-mini model, use the `--ws` flag:
 
 ```shell
 python demo/main.py --user $PLAY_HT_USER_ID --key $PLAY_HT_API_KEY --text "Hello from Play!" --ws

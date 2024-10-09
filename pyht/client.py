@@ -125,8 +125,8 @@ class TTSOptions:
     voice_guidance: float | None = None
     style_guidance: float | None = None
     repetition_penalty: float | None = None
-    disable_stabilization: bool = False  # only applies to PlayHT2.0
-    language: Language | None = Language.ENGLISH  # only applies to Play3.0
+    disable_stabilization: bool = False  # only applies to PlayHT2.0-turbo
+    language: Language | None = Language.ENGLISH  # only applies to Play3.0-*
 
     def tts_params(self, text: list[str], voice_engine: str | None) -> api_pb2.TtsParams:
         params = api_pb2.TtsParams(
@@ -227,7 +227,7 @@ class Client:
         auto_refresh_lease: bool = True
         disable_lease_disk_cache: bool = False
 
-        # HTTP/WebSocket (Play3.0)
+        # HTTP/WebSocket (Play3.0-mini-http, Play3.0-mini-ws)
         inference_coordinates_options: InferenceCoordinatesOptions = field(default_factory=InferenceCoordinatesOptions)
 
     def __init__(
@@ -411,9 +411,9 @@ class Client:
     ) -> Iterable[bytes]:
         metrics = self._telemetry.start("tts-request")
         try:
-            if voice_engine is None or voice_engine == "Play3.0":
+            if voice_engine is None or voice_engine == "Play3.0-mini-http" or voice_engine == "Play3.0":
                 return self._tts_http(text, options, voice_engine, metrics)
-            elif voice_engine == "Play3.0-ws":
+            elif voice_engine == "Play3.0-mini-ws" or voice_engine == "Play3.0-ws":
                 return self._tts_ws(text, options, voice_engine, metrics)
             else:
                 return self._tts_grpc(text, options, voice_engine, metrics)
@@ -428,8 +428,8 @@ class Client:
             voice_engine: str | None,
             metrics: Metrics
     ) -> Iterable[bytes]:
-        if voice_engine == "Play3.0":
-            raise ValueError("Play3.0 is only supported in the HTTP API; otherwise use the gRPC API.")
+        if voice_engine.startswith("Play3.0"):
+            raise ValueError("Play3.0-* models are only supported in the HTTP and WebSocket APIs, not in the gRPC API.")
 
         start = time.perf_counter()
         self.refresh_lease()
@@ -503,9 +503,11 @@ class Client:
             metrics: Metrics
     ) -> Iterable[bytes]:
         if voice_engine is None:
-            voice_engine = "Play3.0"
-        if voice_engine != "Play3.0":
-            raise ValueError("Only Play3.0 is supported in the HTTP API; otherwise use the gRPC API.")
+            voice_engine = "Play3.0-mini-http"
+        if voice_engine == "Play3.0":
+            logging.warning("Voice engine Play3.0 is deprecated; use Play3.0-mini-http instead.")
+        elif voice_engine != "Play3.0-mini-http":
+            raise ValueError("Only Play3.0-mini-http is supported in the HTTP API; for older voice engines use the gRPC API.")
 
         start = time.perf_counter()
         self.ensure_inference_coordinates()
@@ -564,9 +566,11 @@ class Client:
             metrics: Metrics
     ) -> Iterable[bytes]:
         if voice_engine is None:
-            voice_engine = "Play3.0-ws"
-        if voice_engine != "Play3.0-ws":
-            raise ValueError("Only Play3.0-ws is supported in the WebSocket API")
+            voice_engine = "Play3.0-mini-ws"
+        if voice_engine == "Play3.0-ws":
+            logging.warning("Voice engine Play3.0-ws is deprecated; use Play3.0-mini-ws instead.")
+        elif voice_engine != "Play3.0-mini-ws":
+            raise ValueError("Only Play3.0-mini-ws is supported in the WebSocket API; for older voice engines use the gRPC API.")
 
         start = time.perf_counter()
         self.ensure_inference_coordinates()

@@ -43,9 +43,9 @@ def main(
 
     # Get the streams
     if use_http:
-        voice_engine = "Play3.0"
+        voice_engine = "Play3.0-mini-http"
     elif use_ws:
-        voice_engine = "Play3.0-ws"
+        voice_engine = "Play3.0-mini-ws"
     else:
         voice_engine = "PlayHT2.0"
     in_stream, out_stream = client.get_stream_pair(options, voice_engine=voice_engine)
@@ -115,11 +115,11 @@ async def async_main(
 
     # Get the streams
     if use_http:
-        voice_engine = "Play3.0"
+        voice_engine = "Play3.0-mini-http"
     elif use_ws:
-        voice_engine = "Play3.0-ws"
+        voice_engine = "Play3.0-mini-ws"
     else:
-        voice_engine = "PlayHT2.0"
+        voice_engine = "PlayHT2.0-turbo"
     in_stream, out_stream = client.get_stream_pair(options, voice_engine=voice_engine)
 
     audio_task = asyncio.create_task(async_save_audio(out_stream))
@@ -162,13 +162,13 @@ if __name__ == "__main__":
 
     api_group = parser.add_mutually_exclusive_group(required=True)
     api_group.add_argument(
-        "--ws", action="store_true", help="Use the WebSocket API with the 3.0 model.", dest="use_ws"
+        "--ws", action="store_true", help="Use the WebSocket API with the 3.0-mini model.", dest="use_ws"
     )
     api_group.add_argument(
-        "--http", action="store_true", help="Use the HTTP API with the 3.0 model.", dest="use_http"
+        "--http", action="store_true", help="Use the HTTP API with the 3.0-mini model.", dest="use_http"
     )
     api_group.add_argument(
-        "--grpc", action="store_true", help="Use the gRPC API with the 2.0 model.", dest="use_grpc"
+        "--grpc", action="store_true", help="Use the gRPC API with the 2.0-turbo model.", dest="use_grpc"
     )
 
     parser.add_argument(
