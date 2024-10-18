@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Dict, Generator, Iterable, Iterator, List, Tuple
+from typing import Any, Dict, Generator, Iterable, Iterator, List, Tuple, Optional, Union
 import io
 import json
 import logging
@@ -13,14 +13,14 @@ import tempfile
 import threading
 import time
 import uuid
-from websockets.sync.client import connect
+from websockets.sync.client import connect, ClientConnection
 
 import filelock
 import grpc
 from grpc import Channel, insecure_channel, secure_channel, ssl_channel_credentials, StatusCode
 import requests
 
-from .inference_coordinates import InferenceCoordinates, InferenceCoordinatesOptions
+from .inference_coordinates import get_coordinates, InferenceCoordinatesOptions
 from .lease import Lease, LeaseFactory
 from .protos import api_pb2, api_pb2_grpc
 from .protos.api_pb2 import Format
@@ -221,7 +221,7 @@ class Client:
         remove_ssml_tags: bool = False
 
         # gRPC (PlayHT2.0 and earlier)
-        grpc_addr: str | None = None
+        grpc_addr: Optional[str] = None
         insecure: bool = False
         fallback_enabled: bool = False
         auto_refresh_lease: bool = True
@@ -235,7 +235,7 @@ class Client:
         user_id: str,
         api_key: str,
         auto_connect: bool = True,
-        advanced: "Client.AdvancedOptions | None" = None,
+        advanced: Optional["Client.AdvancedOptions"] = None,
     ):
         assert user_id, "user_id is required"
         assert api_key, "api_key is required"
@@ -256,16 +256,16 @@ class Client:
             return lease
 
         self._lease_factory = lease_factory
-        self._lease: Lease | None = None
-        self._rpc: Tuple[str, Channel] | None = None
-        self._fallback_rpc: Tuple[str, Channel] | None = None
+        self._lease: Optional[Lease] = None
+        self._rpc: Optional[Tuple[str, Channel]] = None
+        self._fallback_rpc: Optional[Tuple[str, Channel]] = None
         self._lock = threading.Lock()
-        self._timer: threading.Timer | None = None
+        self._timer: Optional[threading.Timer] = None
         self._telemetry = Telemetry(self._advanced.metrics_buffer_size)
         self._user_id = user_id
         self._api_key = api_key
-        self._inference_coordinates = None
-        self._ws = None
+        self._inference_coordinates: Optional[Dict[str, Any]] = None
+        self._ws: Optional[ClientConnection] = None
 
         if self._advanced.congestion_ctrl == CongestionCtrl.STATIC_MAR_2023:
             self._max_attempts = 3
@@ -279,14 +279,15 @@ class Client:
             self.warmup()
 
     def ensure_inference_coordinates(self):
-        if self._inference_coordinates is None or self._inference_coordinates.refresh_at_ms < time.time_ns() // 1000000:
+        if self._inference_coordinates is None or \
+                self._inference_coordinates["refresh_at_ms"] < time.time_ns() // 1000000:
             if self._advanced.inference_coordinates_options.coordinates_generator_function is not None:
                 self._inference_coordinates = self._advanced.inference_coordinates_options.\
                     coordinates_generator_function(self._user_id, self._api_key,
                                                    self._advanced.inference_coordinates_options)
             else:
-                self._inference_coordinates = InferenceCoordinates.get(self._user_id, self._api_key,
-                                                                       self._advanced.inference_coordinates_options)
+                self._inference_coordinates = get_coordinates(self._user_id, self._api_key,
+                                                              self._advanced.inference_coordinates_options)
 
         assert self._inference_coordinates is not None, "No connection"
 
@@ -295,7 +296,7 @@ class Client:
 
         try:
             assert self._inference_coordinates is not None, "No connection"
-            requests.options(self._inference_coordinates.address,
+            requests.options(self._inference_coordinates["Play3.0-mini"]["http_streaming_url"],
                              headers={"Origin": "https://play.ht",
                                       "Access-Control-Request-Method": "POST"})
         except Exception as e:
@@ -405,31 +406,50 @@ class Client:
 
     def tts(
             self,
-            text: str | List[str],
+            text: Union[str, List[str]],
             options: TTSOptions,
             voice_engine: str | None = None
     ) -> Iterable[bytes]:
         metrics = self._telemetry.start("tts-request")
         try:
-            if voice_engine is None or voice_engine == "Play3.0-mini-http" or voice_engine == "Play3.0":
-                return self._tts_http(text, options, voice_engine, metrics)
-            elif voice_engine == "Play3.0-mini-ws" or voice_engine == "Play3.0-ws":
-                return self._tts_ws(text, options, voice_engine, metrics)
+            if voice_engine is None:
+                voice_engine = "Play3.0-mini"
+                protocol = "http"
+            elif voice_engine == "PlayHT2.0" or voice_engine == "PlayHT2.0-turbo":
+                protocol = "grpc"
+            elif voice_engine == "Play3.0":
+                logging.warning("Voice engine Play3.0 is deprecated; use Play3.0-mini-http instead.")
+                voice_engine = "Play3.0-mini"
+                protocol = "http"
+            elif voice_engine == "Play3.0-ws":
+                logging.warning("Voice engine Play3.0-ws is deprecated; use Play3.0-mini-ws instead.")
+                voice_engine = "Play3.0-mini"
+                protocol = "ws"
             else:
+                voice_engine, protocol = voice_engine.rsplit("-", 1)
+
+            if protocol == "http":
+                return self._tts_http(text, options, voice_engine, metrics)
+            elif protocol == "ws":
+                return self._tts_ws(text, options, voice_engine, metrics)
+            elif protocol == "grpc":
                 return self._tts_grpc(text, options, voice_engine, metrics)
+            else:
+                raise ValueError(f"Unknown protocol {protocol}")
         except Exception as e:
             metrics.finish_error(str(e))
             raise e
 
     def _tts_grpc(
             self,
-            text: str | List[str],
+            text: Union[str, List[str]],
             options: TTSOptions,
             voice_engine: str | None,
             metrics: Metrics
     ) -> Iterable[bytes]:
-        if voice_engine is not None and voice_engine.startswith("Play3.0"):
-            raise ValueError("Play3.0-* models are only supported in the HTTP and WebSocket APIs, not in the gRPC API.")
+        supported_voice_engines = ["PlayHT2.0", "PlayHT2.0-turbo"]
+        if voice_engine not in supported_voice_engines:
+            raise ValueError(f"Only {supported_voice_engines} are supported in the gRPC API; got {voice_engine}")
 
         start = time.perf_counter()
         self.refresh_lease()
@@ -497,30 +517,28 @@ class Client:
 
     def _tts_http(
             self,
-            text: str | List[str],
+            text: Union[str, List[str]],
             options: TTSOptions,
             voice_engine: str | None,
             metrics: Metrics
     ) -> Iterable[bytes]:
-        if voice_engine is None:
-            voice_engine = "Play3.0-mini-http"
-        if voice_engine == "Play3.0":
-            logging.warning("Voice engine Play3.0 is deprecated; use Play3.0-mini-http instead.")
-        elif voice_engine != "Play3.0-mini-http":
-            raise ValueError("Only Play3.0-mini-http is supported in the HTTP API; otherwise use the gRPC API.")
+        supported_voice_engines = ["Play3.0-mini", "PlayDialog"]
+        if voice_engine not in supported_voice_engines:
+            raise ValueError(f"Only {supported_voice_engines} are supported in the HTTP API; got {voice_engine}")
 
         start = time.perf_counter()
         self.ensure_inference_coordinates()
 
         text = prepare_text(text, self._advanced.remove_ssml_tags)
         assert self._inference_coordinates is not None, "No connection"
-        metrics.append("text", str(text)).append("endpoint", str(self._inference_coordinates.address))
+        metrics.append("text", str(text)).append("endpoint",
+                                                 str(self._inference_coordinates[voice_engine]["http_streaming_url"]))
 
         for attempt in range(1, self._max_attempts + 1):
             try:
                 assert self._inference_coordinates is not None, "No connection"
                 response = requests.post(
-                        self._inference_coordinates.address,
+                        self._inference_coordinates[voice_engine]["http_streaming_url"],
                         headers={
                             "accept": output_format_to_mime_type(options.format),
                         },
@@ -560,24 +578,22 @@ class Client:
 
     def _tts_ws(
             self,
-            text: str | List[str],
+            text: Union[str, List[str]],
             options: TTSOptions,
             voice_engine: str | None,
             metrics: Metrics
     ) -> Iterable[bytes]:
-        if voice_engine is None:
-            voice_engine = "Play3.0-mini-ws"
-        if voice_engine == "Play3.0-ws":
-            logging.warning("Voice engine Play3.0-ws is deprecated; use Play3.0-mini-ws instead.")
-        elif voice_engine != "Play3.0-mini-ws":
-            raise ValueError("Only Play3.0-mini-ws is supported in the WebSocket API; otherwise use the gRPC API.")
+        supported_voice_engines = ["Play3.0-mini", "PlayDialog"]
+        if voice_engine not in supported_voice_engines:
+            raise ValueError(f"Only {supported_voice_engines} are supported in the WebSocket API; got {voice_engine}")
 
         start = time.perf_counter()
         self.ensure_inference_coordinates()
 
         text = prepare_text(text, self._advanced.remove_ssml_tags)
         assert self._inference_coordinates is not None, "No connection"
-        metrics.append("text", str(text)).append("endpoint", str(self._inference_coordinates.address))
+        metrics.append("text", str(text)).append("endpoint",
+                                                 str(self._inference_coordinates[voice_engine]["websocket_url"]))
         request_id = str(uuid.uuid4())
         json_data = http_prepare_dict(text, options, voice_engine)
         json_data["request_id"] = request_id
@@ -585,7 +601,7 @@ class Client:
         for attempt in range(1, self._max_attempts + 1):
             try:
                 assert self._inference_coordinates is not None, "No connection"
-                ws_address = self._inference_coordinates.address.replace("https", "wss").replace("stream", "ws")
+                ws_address = self._inference_coordinates[voice_engine]["websocket_url"]
                 if self._ws is None:
                     self._ws = connect(ws_address)
                 self._ws.send(json.dumps(json_data))
