@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Dict, Generator, Iterable, Iterator, List, Tuple
+from typing import Any, Dict, Generator, Iterable, Iterator, List, Tuple, Optional, Union
 import io
 import json
 import logging
@@ -13,14 +13,14 @@ import tempfile
 import threading
 import time
 import uuid
-from websockets.sync.client import connect
+from websockets.sync.client import connect, ClientConnection
 
 import filelock
 import grpc
 from grpc import Channel, insecure_channel, secure_channel, ssl_channel_credentials, StatusCode
 import requests
 
-from .inference_coordinates import InferenceCoordinates, InferenceCoordinatesOptions
+from .inference_coordinates import get_coordinates, InferenceCoordinatesOptions
 from .lease import Lease, LeaseFactory
 from .protos import api_pb2, api_pb2_grpc
 from .protos.api_pb2 import Format
@@ -52,6 +52,22 @@ class HTTPFormat(Enum):
     FORMAT_OGG = "ogg"
     FORMAT_FLAC = "flac"
     FORMAT_MULAW = "mulaw"
+
+
+# PlayDialog-* only
+class CandidateRankingMethod(Enum):
+    MeanProbRank = "mean_prob"
+
+    # non-streaming only
+    DescriptionRank = "description"
+    ASRRank = "asr"
+    DescriptionASRRank = "description_asr"
+    ASRWithMeanProbRank = "asr_with_mean_prob"
+    DescriptionASRWithMeanProbRank = "description_asr_with_mean_prob"
+
+    # streaming only
+    EndProbRank = "end_prob"
+    MeanProbWithEndProbRank = "mean_prob_with_end_prob"
 
 
 def grpc_format_to_http_format(format: Format) -> HTTPFormat:
@@ -157,27 +173,47 @@ LanguageIdentifiers = {
 class TTSOptions:
     voice: str
     format: Format = Format.FORMAT_WAV
-    sample_rate: int = 24000
-    quality: str = ""  # DEPRECATED (use sample rate to adjust audio quality)
+    sample_rate: Optional[int] = None
     speed: float = 1.0
-    seed: int | None = None
-    temperature: float | None = None
-    top_p: float | None = None
-    text_guidance: float | None = None
-    voice_guidance: float | None = None
-    style_guidance: float | None = None
-    repetition_penalty: float | None = None
-    disable_stabilization: bool = False  # only applies to PlayHT2.0-turbo
-    language: Language | None = Language.ENGLISH  # only applies to Play3.0-*
+    seed: Optional[int] = None
+    temperature: Optional[float] = None
+    top_p: Optional[float] = None
 
-    def tts_params(self, text: list[str], voice_engine: str | None) -> api_pb2.TtsParams:
+    # only applies to Play3.0-* and PlayHT2.0-turbo
+    text_guidance: Optional[float] = None
+    voice_guidance: Optional[float] = None
+    repetition_penalty: Optional[float] = None
+
+    # only applies to Play3.0-*
+    style_guidance: Optional[float] = None
+
+    # only applies to PlayHT2.0-*
+    disable_stabilization: Optional[bool] = None
+
+    # only applies to Play3.0-* and PlayDialog-*
+    language: Optional[Language] = None
+
+    # only applies to PlayDialog-*
+    # leave the _2 params None if generating single-speaker audio
+    voice_2: Optional[str] = None
+    turn_prefix: Optional[str] = None
+    turn_prefix_2: Optional[str] = None
+    voice_conditioning_seconds: Optional[int] = None
+    voice_conditioning_seconds_2: Optional[int] = None
+    scene_description: Optional[str] = None
+    turn_clip_description: Optional[str] = None
+    num_candidates: Optional[int] = None
+    candidate_ranking_method: Optional[CandidateRankingMethod] = None
+
+    # DEPRECATED (use sample rate to adjust audio quality)
+    quality: Optional[str] = None
+
+    def tts_params(self, text: list[str], voice_engine: Optional[str]) -> api_pb2.TtsParams:
 
         if voice_engine is None:
-            voice_engine = "Play3.0-mini-grpc"
-        if voice_engine == "PlayHT2.0-turbo":
-            logging.warning("Voice engine PlayHT2.0-turbo is deprecated; use Play3.0-mini-grpc instead.")
-        elif voice_engine != "Play3.0-mini-grpc":
-            raise ValueError("Only Play3.0-mini-grpc is supported in the gRPC API")
+            voice_engine = "PlayHT2.0-turbo"
+        elif voice_engine != "Play3.0-mini" and voice_engine != "PlayHT2.0-turbo":
+            raise ValueError(f"Only PlayHT2.0-turbo and Play3.0-mini (on-prem only) are supported in the gRPC API; got {voice_engine}")
 
         language_identifier = None
         if self.language is not None:
@@ -224,6 +260,14 @@ def output_format_to_mime_type(format: Format) -> str:
 
 
 def http_prepare_dict(text: List[str], options: TTSOptions, voice_engine: str) -> Dict[str, Any]:
+    if voice_engine.startswith("Play3.0"):
+        version = "v3"
+    elif voice_engine.startswith("PlayHT2.0"):
+        version = "v2"
+    elif voice_engine.startswith("PlayDialog"):
+        version = "ldm"
+    else:
+        raise ValueError(f"Unknown voice engine: {voice_engine}")
     return {
         "text": text,
         "voice": options.voice,
@@ -241,13 +285,26 @@ def http_prepare_dict(text: List[str], options: TTSOptions, voice_engine: str) -
             "repetition_penalty": options.repetition_penalty,
         }.items() if v is not None},
         "language": options.language.value if options.language is not None else None,
-        "version": "v3",
+        "version": version,
+
+        # PlayDialog-*
+        # leave the _2 params None if generating single-speaker audio
+        "voice_2": options.voice_2,
+        "turn_prefix": options.turn_prefix,
+        "turn_prefix_2": options.turn_prefix_2,
+        "voice_conditioning_seconds": options.voice_conditioning_seconds,
+        "voice_conditioning_seconds_2": options.voice_conditioning_seconds_2,
+        "scene_description": options.scene_description,
+        "turn_clip_description": options.turn_clip_description,
+        "num_candidates": options.num_candidates,
+        "candidate_ranking_method": options.candidate_ranking_method.value
+        if options.candidate_ranking_method is not None else None,
     }
 
 
 class CongestionCtrl(Enum):
     """
-    Enumerates a streaming congestion control algorithms, used to optimize the rate at which text is sent to PlayHT.
+    Enumerates a streaming congestion control algorithms, used to optimize the rate at which text is sent to Play.
     """
 
     # The client will not do any congestion control.
@@ -258,12 +315,12 @@ class CongestionCtrl(Enum):
     # Then it will fall back to the fallback address (if one is configured).  No retry attempts will be made
     # against the fallback address.
     #
-    # If you're using PlayHT On-Prem, you should probably be using this congestion control algorithm.
+    # If you're using Play On-Prem, you should probably be using this congestion control algorithm.
     STATIC_MAR_2023 = 1
 
 
 class Client:
-    LEASE_DATA: bytes | None = None
+    LEASE_DATA: Optional[bytes] = None
     LEASE_CACHE_PATH: str = os.path.join(tempfile.gettempdir(), 'playht.temporary.lease')
     LEASE_LOCK = threading.Lock()
 
@@ -275,7 +332,7 @@ class Client:
         remove_ssml_tags: bool = False
 
         # gRPC (PlayHT2.0-turbo and Play3.0-mini-grpc)
-        grpc_addr: str | None = None
+        grpc_addr: Optional[str] = None
         insecure: bool = False
         fallback_enabled: bool = False
         auto_refresh_lease: bool = True
@@ -289,7 +346,7 @@ class Client:
         user_id: str,
         api_key: str,
         auto_connect: bool = True,
-        advanced: "Client.AdvancedOptions | None" = None,
+        advanced: Optional["Client.AdvancedOptions"] = None,
     ):
         assert user_id, "user_id is required"
         assert api_key, "api_key is required"
@@ -310,16 +367,16 @@ class Client:
             return lease
 
         self._lease_factory = lease_factory
-        self._lease: Lease | None = None
-        self._rpc: Tuple[str, Channel] | None = None
-        self._fallback_rpc: Tuple[str, Channel] | None = None
+        self._lease: Optional[Lease] = None
+        self._rpc: Optional[Tuple[str, Channel]] = None
+        self._fallback_rpc: Optional[Tuple[str, Channel]] = None
         self._lock = threading.Lock()
-        self._timer: threading.Timer | None = None
+        self._timer: Optional[threading.Timer] = None
         self._telemetry = Telemetry(self._advanced.metrics_buffer_size)
         self._user_id = user_id
         self._api_key = api_key
-        self._inference_coordinates = None
-        self._ws = None
+        self._inference_coordinates: Optional[Dict[str, Any]] = None
+        self._ws: Optional[ClientConnection] = None
 
         if self._advanced.congestion_ctrl == CongestionCtrl.STATIC_MAR_2023:
             self._max_attempts = 3
@@ -332,15 +389,16 @@ class Client:
             self.refresh_lease()
             self.warmup()
 
-    def ensure_inference_coordinates(self):
-        if self._inference_coordinates is None or self._inference_coordinates.refresh_at_ms < time.time_ns() // 1000000:
+    def ensure_inference_coordinates(self, force: bool = False):
+        if self._inference_coordinates is None or \
+                self._inference_coordinates["refresh_at_ms"] < time.time_ns() // 1000000 or force:
             if self._advanced.inference_coordinates_options.coordinates_generator_function is not None:
                 self._inference_coordinates = self._advanced.inference_coordinates_options.\
                     coordinates_generator_function(self._user_id, self._api_key,
                                                    self._advanced.inference_coordinates_options)
             else:
-                self._inference_coordinates = InferenceCoordinates.get(self._user_id, self._api_key,
-                                                                       self._advanced.inference_coordinates_options)
+                self._inference_coordinates = get_coordinates(self._user_id, self._api_key,
+                                                              self._advanced.inference_coordinates_options)
 
         assert self._inference_coordinates is not None, "No connection"
 
@@ -349,14 +407,14 @@ class Client:
 
         try:
             assert self._inference_coordinates is not None, "No connection"
-            requests.options(self._inference_coordinates.address,
+            requests.options(self._inference_coordinates["Play3.0-mini"]["http_streaming_url"],
                              headers={"Origin": "https://play.ht",
                                       "Access-Control-Request-Method": "POST"})
         except Exception as e:
             logging.warning(f"Failed to warmup: {e}")
 
     @classmethod
-    def _lease_cache_read(cls) -> bytes | None:
+    def _lease_cache_read(cls) -> Optional[bytes]:
         with cls.LEASE_LOCK:
             if cls.LEASE_DATA is not None:
                 return cls.LEASE_DATA
@@ -392,7 +450,7 @@ class Client:
         self._timer.start()
 
     def refresh_lease(self):
-        """Manually refresh credentials with Play.ht."""
+        """Manually refresh credentials with Play."""
         with self._lock:
             if self._lease and self._lease.expires > datetime.now() + timedelta(minutes=5):
                 if self._advanced.auto_refresh_lease and self._timer is None:
@@ -439,9 +497,9 @@ class Client:
 
     def stream_tts_input(
         self,
-        text_stream: Generator[str, None, None] | Iterable[str],
+        text_stream: Union[Generator[str, None, None], Iterable[str]],
         options: TTSOptions,
-        voice_engine: str | None = None
+        voice_engine: Optional[str] = None
     ) -> Iterable[bytes]:
         """Stream input to Play.ht via the text_stream object."""
         buffer = io.StringIO()
@@ -459,36 +517,58 @@ class Client:
 
     def tts(
             self,
-            text: str | List[str],
+            text: Union[str, List[str]],
             options: TTSOptions,
-            voice_engine: str | None = None
+            voice_engine: Optional[str] = None,
+            streaming: bool = True
     ) -> Iterable[bytes]:
         metrics = self._telemetry.start("tts-request")
         try:
-            if voice_engine is None or voice_engine == "Play3.0-mini-http" or voice_engine == "Play3.0":
-                return self._tts_http(text, options, voice_engine, metrics)
-            elif voice_engine == "Play3.0-mini-ws" or voice_engine == "Play3.0-ws":
-                return self._tts_ws(text, options, voice_engine, metrics)
-            elif voice_engine == "Play3.0-mini-grpc":
-                return self._tts_grpc(text, options, voice_engine, metrics)
+            if voice_engine is None:
+                voice_engine = "Play3.0-mini"
+                protocol = "http"
+            elif voice_engine == "PlayHT2.0-turbo":
+                protocol = "grpc"
+            elif voice_engine == "Play3.0":
+                logging.warning("Voice engine Play3.0 is deprecated; use Play3.0-mini-http instead.")
+                voice_engine = "Play3.0-mini"
+                protocol = "http"
+            elif voice_engine == "Play3.0-ws":
+                logging.warning("Voice engine Play3.0-ws is deprecated; use Play3.0-mini-ws instead.")
+                voice_engine = "Play3.0-mini"
+                protocol = "ws"
             else:
-                return self._tts_grpc(text, options, voice_engine, metrics)
+                voice_engine, protocol = voice_engine.rsplit("-", 1)
+
+            if protocol == "http":
+                return self._tts_http(text, options, voice_engine, metrics, streaming)
+            elif protocol == "ws":
+                if streaming:
+                    return self._tts_ws(text, options, voice_engine, metrics)
+                else:
+                    raise ValueError("Non-streaming is not supported for WebSocket API")
+            elif protocol == "grpc":
+                if streaming:
+                    return self._tts_grpc(text, options, voice_engine, metrics)
+                else:
+                    raise ValueError("Non-streaming is not supported for gRPC API")
+            else:
+                raise ValueError(f"Unknown protocol {protocol}")
         except Exception as e:
             metrics.finish_error(str(e))
             raise e
 
     def _tts_grpc(
             self,
-            text: str | List[str],
+            text: Union[str, List[str]],
             options: TTSOptions,
-            voice_engine: str | None,
+            voice_engine: Optional[str],
             metrics: Metrics
     ) -> Iterable[bytes]:
 
-        if voice_engine is None:
-            voice_engine = "Play3.0-mini-grpc"
-        elif voice_engine != "Play3.0-mini-grpc" and voice_engine != "PlayHT2.0-turbo":
-            raise ValueError("Only Play3.0-mini-grpc and PlayHT2.0-turbo are supported in the gRPC API")
+        supported_voice_engines = ["Play3.0-mini", "PlayHT2.0-turbo"]
+        if voice_engine not in supported_voice_engines:
+            raise ValueError(f"Only {supported_voice_engines} are supported in the gRPC API; got {voice_engine}")
 
         start = time.perf_counter()
         self.refresh_lease()
@@ -556,30 +636,33 @@ class Client:
 
     def _tts_http(
             self,
-            text: str | List[str],
+            text: Union[str, List[str]],
             options: TTSOptions,
-            voice_engine: str | None,
-            metrics: Metrics
+            voice_engine: Optional[str],
+            metrics: Metrics,
+            streaming: bool = True
     ) -> Iterable[bytes]:
-        if voice_engine is None:
-            voice_engine = "Play3.0-mini-http"
-        if voice_engine == "Play3.0":
-            logging.warning("Voice engine Play3.0 is deprecated; use Play3.0-mini-http instead.")
-        elif voice_engine != "Play3.0-mini-http":
-            raise ValueError("Only Play3.0-mini-http is supported in the HTTP API; otherwise use the gRPC API.")
+        supported_voice_engines = ["Play3.0-mini", "PlayDialog"]
+        if voice_engine not in supported_voice_engines:
+            raise ValueError(f"Only {supported_voice_engines} are supported in the HTTP API; got {voice_engine}")
 
         start = time.perf_counter()
         self.ensure_inference_coordinates()
+        assert self._inference_coordinates is not None, "No connection"
+
+        if streaming:
+            url = self._inference_coordinates[voice_engine]["http_streaming_url"]
+        else:
+            url = self._inference_coordinates[voice_engine]["http_nonstreaming_url"]
 
         text = prepare_text(text, self._advanced.remove_ssml_tags)
-        assert self._inference_coordinates is not None, "No connection"
-        metrics.append("text", str(text)).append("endpoint", str(self._inference_coordinates.address))
+        metrics.append("text", str(text)).append("endpoint", str(url))
 
         for attempt in range(1, self._max_attempts + 1):
             try:
                 assert self._inference_coordinates is not None, "No connection"
                 response = requests.post(
-                        self._inference_coordinates.address,
+                        url,
                         headers={
                             "accept": output_format_to_mime_type(options.format),
                         },
@@ -619,24 +702,22 @@ class Client:
 
     def _tts_ws(
             self,
-            text: str | List[str],
+            text: Union[str, List[str]],
             options: TTSOptions,
-            voice_engine: str | None,
+            voice_engine: Optional[str],
             metrics: Metrics
     ) -> Iterable[bytes]:
-        if voice_engine is None:
-            voice_engine = "Play3.0-mini-ws"
-        if voice_engine == "Play3.0-ws":
-            logging.warning("Voice engine Play3.0-ws is deprecated; use Play3.0-mini-ws instead.")
-        elif voice_engine != "Play3.0-mini-ws":
-            raise ValueError("Only Play3.0-mini-ws is supported in the WebSocket API; otherwise use the gRPC API.")
+        supported_voice_engines = ["Play3.0-mini", "PlayDialog"]
+        if voice_engine not in supported_voice_engines:
+            raise ValueError(f"Only {supported_voice_engines} are supported in the WebSocket API; got {voice_engine}")
 
         start = time.perf_counter()
         self.ensure_inference_coordinates()
 
         text = prepare_text(text, self._advanced.remove_ssml_tags)
         assert self._inference_coordinates is not None, "No connection"
-        metrics.append("text", str(text)).append("endpoint", str(self._inference_coordinates.address))
+        metrics.append("text", str(text)).append("endpoint",
+                                                 str(self._inference_coordinates[voice_engine]["websocket_url"]))
         request_id = str(uuid.uuid4())
         json_data = http_prepare_dict(text, options, voice_engine)
         json_data["request_id"] = request_id
@@ -644,7 +725,7 @@ class Client:
         for attempt in range(1, self._max_attempts + 1):
             try:
                 assert self._inference_coordinates is not None, "No connection"
-                ws_address = self._inference_coordinates.address.replace("https", "wss").replace("stream", "ws")
+                ws_address = self._inference_coordinates[voice_engine]["websocket_url"]
                 if self._ws is None:
                     self._ws = connect(ws_address)
                 self._ws.send(json.dumps(json_data))
@@ -669,7 +750,7 @@ class Client:
                         time.sleep(self._backoff)
                     metrics.finish_timer("retry-backoff")
                     # In case it was an expired token, refresh it
-                    self.ensure_inference_coordinates()
+                    self.ensure_inference_coordinates(force=True)
                     continue
                 metrics.finish_error(str(e))
                 raise
@@ -677,7 +758,7 @@ class Client:
     def get_stream_pair(
         self,
         options: TTSOptions,
-        voice_engine: str | None = None
+        voice_engine: Optional[str] = None
     ) -> Tuple['_InputStream', '_OutputStream']:
         """Get a linked pair of (input, output) streams.
 
@@ -708,7 +789,7 @@ class Client:
 
 
 class TextStream(Iterator[str]):
-    def __init__(self, q: queue.Queue | None = None):
+    def __init__(self, q: Optional[queue.Queue] = None):
         super().__init__()
         self._q = q or queue.Queue()
 
@@ -737,7 +818,8 @@ class _InputStream:
        input_stream += 'Add another sentence to the stream.'
        input_stream.done()
     """
-    def __init__(self, client: Client, options: TTSOptions, q: queue.Queue[bytes | None], voice_engine: str | None):
+    def __init__(self, client: Client, options: TTSOptions, q: queue.Queue[Optional[bytes]],
+                 voice_engine: Optional[str]):
         self._input = TextStream()
 
         def listen():
@@ -767,7 +849,7 @@ class _OutputStream(Iterator[bytes]):
            <do stuff with audio bytes>
         output_stream.close()
     """
-    def __init__(self, q: queue.Queue[bytes | None]):
+    def __init__(self, q: queue.Queue[Optional[bytes]]):
         self._close = threading.Event()
         self._q = q
 

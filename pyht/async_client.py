@@ -10,9 +10,9 @@ import os
 import sys
 import tempfile
 import time
-from typing import Any, AsyncGenerator, AsyncIterable, AsyncIterator, Coroutine
+from typing import Any, Dict, AsyncGenerator, AsyncIterable, AsyncIterator, Coroutine, Tuple, Optional, Union
 import uuid
-from websockets.asyncio.client import connect
+from websockets.asyncio.client import connect, ClientConnection
 
 import aiohttp
 import filelock
@@ -22,7 +22,7 @@ from grpc.aio import Call, Channel, insecure_channel, secure_channel, UnaryStrea
 
 from .client import _audio_begins_at, CLIENT_RETRY_OPTIONS, CongestionCtrl, \
         http_prepare_dict, output_format_to_mime_type, TTSOptions
-from .inference_coordinates import InferenceCoordinates, InferenceCoordinatesOptions
+from .inference_coordinates import get_coordinates_async, InferenceCoordinatesOptions
 from .lease import Lease, LeaseFactory
 from .protos import api_pb2, api_pb2_grpc
 from .telemetry import Metrics, Telemetry
@@ -47,7 +47,7 @@ else:
 
 
 class AsyncClient:
-    LEASE_DATA: bytes | None = None
+    LEASE_DATA: Optional[bytes] = None
     LEASE_CACHE_PATH: str = os.path.join(tempfile.gettempdir(), 'playht.temporary.lease')
     LEASE_LOCK = asyncio.Lock()
 
@@ -59,7 +59,7 @@ class AsyncClient:
         remove_ssml_tags: bool = False
 
         # gRPC (PlayHT2.0-turbo, Play3.0-mini-grpc)
-        grpc_addr: str | None = None
+        grpc_addr: Optional[str] = None
         insecure: bool = False
         fallback_enabled: bool = False
         auto_refresh_lease: bool = True
@@ -73,7 +73,7 @@ class AsyncClient:
         user_id: str,
         api_key: str,
         auto_connect: bool = True,
-        advanced: "AsyncClient.AdvancedOptions | None" = None,
+        advanced: Optional["AsyncClient.AdvancedOptions"] = None,
     ):
         assert user_id, "user_id is required"
         assert api_key, "api_key is required"
@@ -94,9 +94,9 @@ class AsyncClient:
             return lease
 
         self._lease_factory = lease_factory
-        self._lease: Lease | None = None
-        self._rpc: tuple[str, Channel] | None = None
-        self._fallback_rpc: tuple[str, Channel] | None = None
+        self._lease: Optional[Lease] = None
+        self._rpc: Optional[Tuple[str, Channel]] = None
+        self._fallback_rpc: Optional[Tuple[str, Channel]] = None
         self._lock = asyncio.Lock()
         self._stop_lease_loop = asyncio.Event()
         if self._advanced.auto_refresh_lease:
@@ -107,8 +107,8 @@ class AsyncClient:
         self._telemetry = Telemetry(self._advanced.metrics_buffer_size)
         self._user_id = user_id
         self._api_key = api_key
-        self._inference_coordinates = None
-        self._ws = None
+        self._inference_coordinates: Optional[Dict[str, Any]] = None
+        self._ws: Optional[ClientConnection] = None
 
         if self._advanced.congestion_ctrl == CongestionCtrl.STATIC_MAR_2023:
             self._max_attempts = 3
@@ -122,16 +122,16 @@ class AsyncClient:
         if auto_connect:
             asyncio.ensure_future(self.warmup())
 
-    async def ensure_inference_coordinates(self):
-        if self._inference_coordinates is None or self._inference_coordinates.refresh_at_ms < time.time_ns() // 1000000:
+    async def ensure_inference_coordinates(self, force: bool = False):
+        if self._inference_coordinates is None or \
+                self._inference_coordinates["refresh_at_ms"] < time.time_ns() // 1000000 or force:
             if self._advanced.inference_coordinates_options.coordinates_generator_function_async is not None:
                 self._inference_coordinates = await self._advanced.inference_coordinates_options.\
                         coordinates_generator_function_async(self._user_id, self._api_key,
                                                              self._advanced.inference_coordinates_options)
             else:
-                self._inference_coordinates = await InferenceCoordinates.\
-                    get_async(self._user_id, self._api_key,
-                              self._advanced.inference_coordinates_options)
+                self._inference_coordinates = await get_coordinates_async(self._user_id, self._api_key,
+                                                                          self._advanced.inference_coordinates_options)
 
         assert self._inference_coordinates is not None, "No connection"
 
@@ -141,7 +141,7 @@ class AsyncClient:
         try:
             async with aiohttp.ClientSession() as session:
                 assert self._inference_coordinates is not None, "No connection"
-                async with session.options(self._inference_coordinates.address,
+                async with session.options(self._inference_coordinates["Play3.0-mini"]["http_streaming_url"],
                                            headers={"Origin": "https://play.ht",
                                                     "Access-Control-Request-Method": "POST"}) as resp:
                     resp.raise_for_status()
@@ -149,7 +149,7 @@ class AsyncClient:
             logging.warning(f"Failed to warmup: {e}")
 
     @classmethod
-    async def _lease_cache_read(cls) -> bytes | None:
+    async def _lease_cache_read(cls) -> Optional[bytes]:
         def get_file():
             try:
                 with filelock.FileLock(cls.LEASE_CACHE_PATH + '.lock'):
@@ -186,7 +186,7 @@ class AsyncClient:
             await asyncio.sleep(refresh_time.total_seconds())
 
     async def refresh_lease(self):
-        """Manually refresh credentials with Play.ht."""
+        """Manually refresh credentials with Play."""
         async with self._lock:
             if self._lease and self._lease.expires > datetime.now() + timedelta(minutes=5):
                 # Lease is still valid for at least the next 5 minutes.
@@ -226,11 +226,11 @@ class AsyncClient:
 
     async def stream_tts_input(
         self,
-        text_stream: AsyncGenerator[str, None] | AsyncIterable[str],
+        text_stream: Union[AsyncGenerator[str, None], AsyncIterable[str]],
         options: TTSOptions,
-        voice_engine: str | None = None,
+        voice_engine: Optional[str] = None,
     ):
-        """Stream input to Play.ht via the text_stream object."""
+        """Stream input to Play via the text_stream object."""
         buffer = io.StringIO()
         async for text in text_stream:
             t = text.strip()
@@ -248,37 +248,59 @@ class AsyncClient:
 
     def tts(
         self,
-        text: str | list[str],
+        text: Union[str, list[str]],
         options: TTSOptions,
-        voice_engine: str | None = None
+        voice_engine: Optional[str] = None,
+        streaming: bool = True
     ) -> AsyncIterable[bytes]:
         metrics = self._telemetry.start("tts-request")
         try:
-            if voice_engine is None or voice_engine == "Play3.0-mini-http" or voice_engine == "Play3.0":
-                return self._tts_http(text, options, voice_engine, metrics)
-            elif voice_engine == "Play3.0-mini-ws" or voice_engine == "Play3.0-ws":
-                return self._tts_ws(text, options, voice_engine, metrics)
-            elif voice_engine == "Play3.0-mini-grpc":
-                return self._tts_grpc(text, options, voice_engine, metrics)
+            if voice_engine is None:
+                voice_engine = "Play3.0-mini"
+                protocol = "http"
+            elif voice_engine == "PlayHT2.0-turbo":
+                protocol = "grpc"
+            elif voice_engine == "Play3.0":
+                logging.warning("Voice engine Play3.0 is deprecated; use Play3.0-mini-http instead.")
+                voice_engine = "Play3.0-mini"
+                protocol = "http"
+            elif voice_engine == "Play3.0-ws":
+                logging.warning("Voice engine Play3.0-ws is deprecated; use Play3.0-mini-ws instead.")
+                voice_engine = "Play3.0-mini"
+                protocol = "ws"
             else:
-                return self._tts_grpc(text, options, voice_engine, metrics)
+                voice_engine, protocol = voice_engine.rsplit("-", 1)
+
+            if protocol == "http":
+                return self._tts_http(text, options, voice_engine, metrics, streaming)
+            elif protocol == "ws":
+                if streaming:
+                    return self._tts_ws(text, options, voice_engine, metrics)
+                else:
+                    raise ValueError("Non-streaming is not supported for WebSocket API")
+            elif protocol == "grpc":
+                if streaming:
+                    return self._tts_grpc(text, options, voice_engine, metrics)
+                else:
+                    raise ValueError("Non-streaming is not supported for gRPC API")
+            else:
+                raise ValueError(f"Unknown protocol {protocol}")
         except Exception as e:
             metrics.finish_error(str(e))
             raise e
 
     async def _tts_grpc(
         self,
-        text: str | list[str],
+        text: Union[str, list[str]],
         options: TTSOptions,
-        voice_engine: str | None,
+        voice_engine: Optional[str],
         metrics: Metrics,
-        context: AsyncContext | None = None
+        context: Optional[AsyncContext] = None
     ) -> AsyncIterable[bytes]:
 
-        if voice_engine is None:
-            voice_engine = "Play3.0-mini-grpc"
-        elif voice_engine != "Play3.0-mini-grpc" and voice_engine != "PlayHT2.0-turbo":
-            raise ValueError("Only Play3.0-mini-grpc and PlayHT2.0-turbo are supported in the gRPC API")
+        supported_voice_engines = ["Play3.0-mini", "PlayHT2.0-turbo"]
+        if voice_engine not in supported_voice_engines:
+            raise ValueError(f"Only {supported_voice_engines} are supported in the gRPC API; got {voice_engine}")
 
         start = time.perf_counter()
         await self.refresh_lease()
@@ -348,32 +370,35 @@ class AsyncClient:
 
     async def _tts_http(
         self,
-        text: str | list[str],
+        text: Union[str, list[str]],
         options: TTSOptions,
-        voice_engine: str | None,
+        voice_engine: Optional[str],
         metrics: Metrics,
-        context: AsyncContext | None = None
+        streaming: bool = True,
+        context: Optional[AsyncContext] = None
     ) -> AsyncIterable[bytes]:
-        if voice_engine is None:
-            voice_engine = "Play3.0-mini-http"
-        if voice_engine == "Play3.0":
-            logging.warning("Voice engine Play3.0 is deprecated; use Play3.0-mini-http instead.")
-        elif voice_engine != "Play3.0-mini-http":
-            raise ValueError("Only Play3.0-mini-http is supported in the HTTP API; otherwise use the gRPC API.")
+        supported_voice_engines = ["Play3.0-mini", "PlayDialog"]
+        if voice_engine not in supported_voice_engines:
+            raise ValueError(f"Only {supported_voice_engines} are supported in the HTTP API; got {voice_engine}")
 
         start = time.perf_counter()
         await self.ensure_inference_coordinates()
+        assert self._inference_coordinates is not None, "No connection"
+
+        if streaming:
+            url = self._inference_coordinates[voice_engine]["http_streaming_url"]
+        else:
+            url = self._inference_coordinates[voice_engine]["http_nonstreaming_url"]
 
         text = prepare_text(text, self._advanced.remove_ssml_tags)
-        assert self._inference_coordinates is not None, "No connection"
-        metrics.append("text", str(text)).append("endpoint", str(self._inference_coordinates.address))
+        metrics.append("text", str(text)).append("endpoint", str(url))
 
         for attempt in range(1, self._max_attempts + 1):
             try:
                 async with aiohttp.ClientSession() as session:
                     assert self._inference_coordinates is not None, "No connection"
                     async with session.post(
-                            self._inference_coordinates.address,
+                            url,
                             headers={
                                 "accept": output_format_to_mime_type(options.format),
                             },
@@ -413,25 +438,23 @@ class AsyncClient:
 
     async def _tts_ws(
         self,
-        text: str | list[str],
+        text: Union[str, list[str]],
         options: TTSOptions,
-        voice_engine: str | None,
+        voice_engine: Optional[str],
         metrics: Metrics,
-        context: AsyncContext | None = None
+        context: Optional[AsyncContext] = None
     ) -> AsyncIterable[bytes]:
-        if voice_engine is None:
-            voice_engine = "Play3.0-mini-ws"
-        if voice_engine == "Play3.0-ws":
-            logging.warning("Voice engine Play3.0-ws is deprecated; use Play3.0-mini-ws instead.")
-        elif voice_engine != "Play3.0-mini-ws":
-            raise ValueError("Only Play3.0-mini-ws is supported in the WebSocket API")
+        supported_voice_engines = ["Play3.0-mini", "PlayDialog"]
+        if voice_engine not in supported_voice_engines:
+            raise ValueError(f"Only {supported_voice_engines} are supported in the WebSocket API; got {voice_engine}")
 
         start = time.perf_counter()
         await self.ensure_inference_coordinates()
 
         text = prepare_text(text, self._advanced.remove_ssml_tags)
         assert self._inference_coordinates is not None, "No connection"
-        metrics.append("text", str(text)).append("endpoint", str(self._inference_coordinates.address))
+        metrics.append("text", str(text)).append("endpoint",
+                                                 str(self._inference_coordinates[voice_engine]["websocket_url"]))
         request_id = str(uuid.uuid4())
         json_data = http_prepare_dict(text, options, voice_engine)
         json_data["request_id"] = request_id
@@ -439,7 +462,7 @@ class AsyncClient:
         for attempt in range(1, self._max_attempts + 1):
             try:
                 assert self._inference_coordinates is not None, "No connection"
-                ws_address = self._inference_coordinates.address.replace("https", "wss").replace("stream", "ws")
+                ws_address = self._inference_coordinates[voice_engine]["websocket_url"]
                 if self._ws is None:
                     self._ws = await connect(ws_address)
                 await self._ws.send(json.dumps(json_data))
@@ -464,7 +487,7 @@ class AsyncClient:
                         await asyncio.sleep(self._backoff)
                     metrics.finish_timer("retry-backoff")
                     # In case it was an expired token, refresh it
-                    await self.ensure_inference_coordinates()
+                    await self.ensure_inference_coordinates(force=True)
                     continue
 
                 metrics.finish_error(str(e))
@@ -473,7 +496,7 @@ class AsyncClient:
     def get_stream_pair(
         self,
         options: TTSOptions,
-        voice_engine: str | None = None
+        voice_engine: Optional[str] = None
     ) -> tuple['_InputStream', '_OutputStream']:
         """Get a linked pair of (input, output) streams.
 
@@ -536,7 +559,7 @@ class AsyncContext:
 
 
 class TextStream(AsyncIterator[str]):
-    def __init__(self, q: asyncio.Queue[str | None] | None = None):
+    def __init__(self, q: Optional[asyncio.Queue[Optional[str]]] = None):
         super().__init__()
         self._q = q or asyncio.Queue()
         self._futures = []
@@ -569,8 +592,8 @@ class _InputStream:
         self,
         client: AsyncClient,
         options: TTSOptions,
-        q: asyncio.Queue[bytes | None],
-        voice_engine: str | None,
+        q: asyncio.Queue[Optional[bytes]],
+        voice_engine: Optional[str],
     ):
         self._input = TextStream()
 
@@ -600,7 +623,7 @@ class _OutputStream(AsyncIterator[bytes]):
            <do stuff with audio bytes>
         output_stream.close()
     """
-    def __init__(self, q: asyncio.Queue[bytes | None]):
+    def __init__(self, q: asyncio.Queue[Optional[bytes]]):
         self._close = asyncio.Event()
         self._q = q
 

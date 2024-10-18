@@ -1,13 +1,14 @@
-# PlayHT API SDK
+# Play API SDK
 
-**pyht** is a Python SDK for [PlayHT's AI Text-to-Speech API](https://play.ht/text-to-speech-api/). PlayHT builds conversational voice AI models for realtime use cases. With **pyht**, you can easily convert text into high-quality audio streams with humanlike voices.
+**pyht** is a Python SDK for [Play's AI Text-to-Speech API](https://play.ht/text-to-speech-api/). Play builds conversational voice AI models for realtime use cases. With **pyht**, you can easily convert text into high-quality audio streams with humanlike voices.
 
-Currently the library supports only streaming text-to-speech. For the full set of functionalities provided by the PlayHT API such as [Voice Cloning](https://docs.play.ht/reference/api-create-instant-voice-clone), see the [PlayHT docs](https://docs.play.ht/reference/api-getting-started)
+Currently the library supports only streaming and non-streaming text-to-speech. For the full set of functionalities provided by the Play API such as [Voice Cloning](https://docs.play.ht/reference/api-create-instant-voice-clone), see the [Play docs](https://docs.play.ht/reference/api-getting-started)
 
 ## Features
 
 - Stream text-to-speech in real-time, synchronous or asynchronous.
-- Use PlayHT's pre-built voices or create custom voice clones.
+- Generate non-streaming text-to-speech, synchronous or asynchronous.
+- Use Play's pre-built voices or your own custom voice clones.
 - Stream text from LLM, and generate audio stream in real-time.
 - Supports WAV, MP3, Mulaw, FLAC, and OGG audio formats as well as raw audio.
 - Supports 8KHz, 16KHz, 24KHz, 44.1KHz and 48KHz sample rates.
@@ -75,15 +76,18 @@ async for chunk in client.tts("Hi, I'm Jennifer from Play. How can I help you to
 
 The `tts` method takes the following arguments:
 
-- `text`: The text to be converted to speech.
-    - a string or list of strings.
-- `options`: The options to use for the TTS request.
-    - a `TTSOptions` object (see below).
-- `voice_engine`: The voice engine to use for the TTS request.
-    - `Play3.0-mini-http` (default): Our latest multilingual model, streaming audio over HTTP. (NOTE that it is `Play` not `PlayHT` like previous voice engines)
-    - `Play3.0-mini-ws`: Our latest multilingual model, streaming audio over WebSockets. (NOTE that it is `Play` not `PlayHT` like previous voice engines)
-    - `Play3.0-mini-grpc`: Our latest multilingual model, streaming audio over gRPC.  Use this voice engine if you're using Play On-Prem. (NOTE that it is `Play` not `PlayHT` like previous voice engines)
+- `text`: The text to be converted to speech; a string or list of strings.
+- `options`: The options to use for the TTS request; a `TTSOptions` object (see below).
+- `voice_engine`: The voice engine to use for the TTS request; a string (default `Play3.0-mini-http`).
+    - `PlayDialog-*`: Our large, expressive multilingual model, which also supports multi-turn two-speaker dialogues.
+        - `PlayDialog-http`: Streaming and non-streaming audio over HTTP.
+        - `PlayDialog-ws`: Streaming audio over WebSockets.
+    - `Play3.0-mini-*`: Our small, fast multilingual model.
+        - `Play3.0-mini-http`: Streaming and non-streaming audio over HTTP.
+        - `Play3.0-mini-ws`: Streaming audio over WebSockets.
+        - `Play3.0-mini-grpc`: Streaming audio over gRPC. NOTE: This voice engine is ONLY available for Play On-Prem customers.
     - `PlayHT2.0-turbo`: Our legacy English-only model, streaming audio over gRPC.
+- `streaming`: Whether or not to stream the audio in chunks (default True); non-streaming is only enabled for HTTP endpoints.
 
 ### TTSOptions
 
@@ -98,7 +102,7 @@ The `TTSOptions` class is used to specify the options for the TTS request. It ha
     - `FORMAT_FLAC`
     - `FORMAT_OGG`
     - `FORMAT_RAW`
-- `sample_rate`: The sample rate of the audio to be returned; an integer.
+- `sample_rate`: The sample rate of the audio to be returned; an integer or None (Play backend will choose by default).
     - 8000
     - 16000
     - 24000
@@ -107,15 +111,15 @@ The `TTSOptions` class is used to specify the options for the TTS request. It ha
 - `quality`: DEPRECATED (use sample rate to adjust audio quality)
 - `speed`: The speed of the audio to be returned, a float (default 1.0).
 - `seed`: Random seed to use for audio generation, an integer (default None, will be randomly generated).
-- The following options are inference-time hyperparameters of the text-to-speech model; if unset, the model will use default values chosen by PlayHT.
-    - `temperature`: The temperature of the model, a float.
-    - `top_p`: The top_p of the model, a float.
-    - `text_guidance`: The text_guidance of the model, a float.
-    - `voice_guidance` The voice_guidance of the model, a float.
-    - `style_guidance` (Play3.0-mini-http and Play3.0-mini-ws only): The style_guidance of the model, a float.
-    - `repetition_penalty`: The repetition_penalty of the model, a float.
+- The following options are inference-time hyperparameters of the text-to-speech model; if unset, the model will use default values chosen by Play.
+    - `temperature` (all models): The temperature of the model, a float.
+    - `top_p` (all models): The top_p of the model, a float.
+    - `text_guidance` (Play3.0-mini-* and PlayHT2.0-turbo only): The text_guidance of the model, a float.
+    - `voice_guidance` (Play3.0-mini-* and PlayHT2.0-turbo only): The voice_guidance of the model, a float.
+    - `style_guidance` (Play3.0-mini-* only): The style_guidance of the model, a float.
+    - `repetition_penalty` (Play3.0-mini-* and PlayHT2.0-turbo only): The repetition_penalty of the model, a float.
 - `disable_stabilization` (PlayHT2.0-turbo only): Disable the audio stabilization process, a boolean (default False).
-- `language` (Play3.0-mini-http and Play3.0-mini-ws only): The language of the text to be spoken, a `Language` enum value or None (default English).
+- `language` (Play3.0-* and PlayDialog-* only): The language of the text to be spoken, a `Language` enum value or None (default English).
     - `AFRIKAANS`
     - `ALBANIAN`
     - `AMHARIC`
@@ -153,6 +157,29 @@ The `TTSOptions` class is used to specify the options for the TTS request. It ha
     - `UKRAINIAN`
     - `URDU`
     - `XHOSA`
+- The following options are additional inference-time hyperparameters which only apply to the PlayDialog-* model; if unset, the model will use default values chosen by Play.
+    - `voice_2` (multi-turn dialogue only): The second voice to use for a multi-turn TTS request; a string.
+        - A URL pointing to a Play voice manifest file.
+    - `turn_prefix` (multi-turn dialogue only): The prefix for the first speaker's turns in a multi-turn TTS request; a string.
+    - `turn_prefix_2` (multi-turn dialogue only): The prefix for the second speaker's turns in a multi-turn TTS request; a string.
+    - `voice_conditioning_seconds`: How much of the voice's reference audio to pass to the model as a guide; an integer.
+    - `voice_conditioning_seconds_2` (multi-turn dialogue only): How much of the second voice's reference audio to pass to the model as a guide; an integer.
+    - `scene_description`: A description of the overall scene (single- or multi-turn) to guide the model; a string (NOTE: currently not recommended).
+    - `turn_clip_description` (multi-turn dialogue only): A description of each turn (with turn prefixes) to guide the model; a string (NOTE: currently not recommended).
+    - `num_candidates`: How many candidates to rank to choose the best one; an integer.
+    - `candidate_ranking_method`: The method for the model to use to rank candidates; a `CandidateRankingMethod` enum value or None (let Play choose the method by default).
+        - Methods valid for streaming and non-streaming requests:
+            - `MeanProbRank`
+        - Methods valid for streaming requests only:
+            - `EndProbRank`
+            - `MeanProbWithEndProbRank`
+        - Methods valid for non-streaming requests only:
+            - `DescriptionRank`
+            - `ASRRank`
+            - `DescriptionASRRank`
+            - `ASRWithMeanProbRank`
+            - `DescriptionASRWithMeanProbRank`
+
 
 ## Command-Line Demo
 

@@ -4,7 +4,7 @@ import asyncio
 import select
 import sys
 import threading
-from typing import AsyncGenerator, AsyncIterable, Generator, Iterable
+from typing import AsyncGenerator, AsyncIterable, Generator, Iterable, Union
 
 from pyht.async_client import AsyncClient
 from pyht.client import Client, TTSOptions, Language
@@ -13,7 +13,7 @@ from pyht.client import Client, TTSOptions, Language
 # === SYNC EXAMPLE ===
 
 
-def save_audio(data: Generator[bytes, None, None] | Iterable[bytes]):
+def save_audio(data: Union[Generator[bytes, None, None], Iterable[bytes]]):
     chunks: bytearray = bytearray()
     for chunk in data:
         chunks.extend(chunk)
@@ -85,7 +85,7 @@ def main(
 # === ASYNC EXAMPLE ===
 
 
-async def async_save_audio(data: AsyncGenerator[bytes, None] | AsyncIterable[bytes]):
+async def async_save_audio(data: Union[AsyncGenerator[bytes, None], AsyncIterable[bytes]]):
     chunks: bytearray = bytearray()
     async for chunk in data:
         chunks.extend(chunk)
@@ -176,10 +176,10 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--user", "-u", type=str, required=True, help="Your Play.ht User ID."
+        "--user", "-u", type=str, required=True, help="Your Play API user ID."
     )
     parser.add_argument(
-        "--key", "-k", type=str, required=True, help="Your Play.ht API key."
+        "--key", "-k", type=str, required=True, help="Your Play API key."
     )
     parser.add_argument(
         "--voice",

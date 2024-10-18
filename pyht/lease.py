@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 import json
 import requests
+from typing import Optional
 
 
 EPOCH = 1519257480
@@ -52,7 +53,7 @@ class Lease:
         return datetime.fromtimestamp(self.created + self.duration + EPOCH)
 
     @property
-    def grpc_addr(self) -> str | None:
+    def grpc_addr(self) -> Optional[str]:
         return self.metadata.get("inference_address")
 
 
