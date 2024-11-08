@@ -473,7 +473,11 @@ class AsyncClient:
                 async for chunk in self._ws:
                     chunk_idx += 1
                     if isinstance(chunk, str):
-                        break
+                        msg = json.loads(chunk)
+                        if msg["type"] == "end":
+                            break
+                        else:
+                            continue
                     elif chunk_idx == _audio_begins_at(options.format):
                         metrics.set_timer("time-to-first-audio", time.perf_counter() - start)
                     yield chunk
