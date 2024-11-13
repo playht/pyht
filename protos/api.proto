@@ -44,6 +44,8 @@ message TtsParams {
 
   optional float voice_guidance = 11;
 
+  optional int32 language_identifier = 15;
+
   optional float text_guidance = 16;
 
   // JSON string with other various parameters.

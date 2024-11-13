@@ -58,7 +58,7 @@ class AsyncClient:
         metrics_buffer_size: int = 1000
         remove_ssml_tags: bool = False
 
-        # gRPC (PlayHT2.0 and earlier)
+        # gRPC (PlayHT2.0-turbo, Play3.0-mini-grpc)
         grpc_addr: str | None = None
         insecure: bool = False
         fallback_enabled: bool = False
@@ -258,6 +258,8 @@ class AsyncClient:
                 return self._tts_http(text, options, voice_engine, metrics)
             elif voice_engine == "Play3.0-mini-ws" or voice_engine == "Play3.0-ws":
                 return self._tts_ws(text, options, voice_engine, metrics)
+            elif voice_engine == "Play3.0-mini-grpc":
+                return self._tts_grpc(text, options, voice_engine, metrics)
             else:
                 return self._tts_grpc(text, options, voice_engine, metrics)
         except Exception as e:
@@ -272,8 +274,11 @@ class AsyncClient:
         metrics: Metrics,
         context: AsyncContext | None = None
     ) -> AsyncIterable[bytes]:
-        if voice_engine is not None and voice_engine.startswith("Play3.0"):
-            raise ValueError("Play3.0-* models are only supported in the HTTP and WebSocket APIs, not in the gRPC API.")
+
+        if voice_engine is None:
+            voice_engine = "Play3.0-mini-grpc"
+        elif voice_engine != "Play3.0-mini-grpc" and voice_engine != "PlayHT2.0-turbo":
+            raise ValueError("Only Play3.0-mini-grpc and PlayHT2.0-turbo are supported in the gRPC API")
 
         start = time.perf_counter()
         await self.refresh_lease()
