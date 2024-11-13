@@ -110,6 +110,7 @@ class Language(Enum):
     URDU = "urdu"
     XHOSA = "xhosa"
 
+# https://github.com/playht/tts.cpp/blob/8adf892e1464069a9ce4b1b7639db962f1cd0deb/play_tts/parrot/parrot_params.py#L31-L73
 LanguageIdentifiers = {
     Language.AFRIKAANS: 20,
     Language.ALBANIAN: 33,
