@@ -70,7 +70,7 @@ class TtsResponse(_message.Message):
     def __init__(self, sequence: _Optional[int] = ..., id: _Optional[str] = ..., data: _Optional[bytes] = ..., status: _Optional[_Union[Status, _Mapping]] = ...) -> None: ...
 
 class TtsParams(_message.Message):
-    __slots__ = ("text", "voice", "quality", "format", "sample_rate", "speed", "seed", "temperature", "top_p", "voice_guidance", "text_guidance", "other")
+    __slots__ = ("text", "voice", "quality", "format", "sample_rate", "speed", "seed", "temperature", "top_p", "voice_guidance", "language_identifier", "text_guidance", "other")
     TEXT_FIELD_NUMBER: _ClassVar[int]
     VOICE_FIELD_NUMBER: _ClassVar[int]
     QUALITY_FIELD_NUMBER: _ClassVar[int]
@@ -81,6 +81,7 @@ class TtsParams(_message.Message):
     TEMPERATURE_FIELD_NUMBER: _ClassVar[int]
     TOP_P_FIELD_NUMBER: _ClassVar[int]
     VOICE_GUIDANCE_FIELD_NUMBER: _ClassVar[int]
+    LANGUAGE_IDENTIFIER_FIELD_NUMBER: _ClassVar[int]
     TEXT_GUIDANCE_FIELD_NUMBER: _ClassVar[int]
     OTHER_FIELD_NUMBER: _ClassVar[int]
     text: _containers.RepeatedScalarFieldContainer[str]
@@ -93,9 +94,10 @@ class TtsParams(_message.Message):
     temperature: float
     top_p: float
     voice_guidance: float
+    language_identifier: int
     text_guidance: float
     other: str
-    def __init__(self, text: _Optional[_Iterable[str]] = ..., voice: _Optional[str] = ..., quality: _Optional[_Union[Quality, str]] = ..., format: _Optional[_Union[Format, str]] = ..., sample_rate: _Optional[int] = ..., speed: _Optional[float] = ..., seed: _Optional[int] = ..., temperature: _Optional[float] = ..., top_p: _Optional[float] = ..., voice_guidance: _Optional[float] = ..., text_guidance: _Optional[float] = ..., other: _Optional[str] = ...) -> None: ...
+    def __init__(self, text: _Optional[_Iterable[str]] = ..., voice: _Optional[str] = ..., quality: _Optional[_Union[Quality, str]] = ..., format: _Optional[_Union[Format, str]] = ..., sample_rate: _Optional[int] = ..., speed: _Optional[float] = ..., seed: _Optional[int] = ..., temperature: _Optional[float] = ..., top_p: _Optional[float] = ..., voice_guidance: _Optional[float] = ..., language_identifier: _Optional[int] = ..., text_guidance: _Optional[float] = ..., other: _Optional[str] = ...) -> None: ...
 
 class Status(_message.Message):
     __slots__ = ("code", "message")

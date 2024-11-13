@@ -110,6 +110,45 @@ class Language(Enum):
     URDU = "urdu"
     XHOSA = "xhosa"
 
+LanguageIdentifiers = {
+    Language.AFRIKAANS: 20,
+    Language.ALBANIAN: 33,
+    Language.AMHARIC: 32,
+    Language.ARABIC: 5,
+    Language.BENGALI: 25,
+    Language.BULGARIAN: 16,
+    Language.CATALAN: 34,
+    Language.CROATIAN: 29,
+    Language.CZECH: 13,
+    Language.DANISH: 31,
+    Language.DUTCH: 11,
+    Language.ENGLISH: 0,
+    Language.FRENCH: 7,
+    Language.GALICIAN: 36,
+    Language.GERMAN: 10,
+    Language.GREEK: 18,
+    Language.HEBREW: 17,
+    Language.HINDI: 2,
+    Language.HUNGARIAN: 30,
+    Language.INDONESIAN: 24,
+    Language.ITALIAN: 8,
+    Language.JAPANESE: 3,
+    Language.KOREAN: 4,
+    Language.MALAY: 23,
+    Language.MANDARIN: 1,
+    Language.POLISH: 14,
+    Language.PORTUGUESE: 9,
+    Language.RUSSIAN: 15,
+    Language.SERBIAN: 26,
+    Language.SPANISH: 6,
+    Language.SWEDISH: 12,
+    Language.TAGALOG: 22,
+    Language.THAI: 27,
+    Language.TURKISH: 19,
+    Language.UKRAINIAN: 35,
+    Language.URDU: 28,
+    Language.XHOSA: 21,
+}
 
 @dataclass
 class TTSOptions:
@@ -129,12 +168,24 @@ class TTSOptions:
     language: Language | None = Language.ENGLISH  # only applies to Play3.0-*
 
     def tts_params(self, text: list[str], voice_engine: str | None) -> api_pb2.TtsParams:
+
+        if voice_engine is None:
+            voice_engine = "Play3.0-mini-grpc"
+        if voice_engine == "PlayHT2.0-turbo":
+            logging.warning("Voice engine PlayHT2.0-turbo is deprecated; use Play3.0-mini-grpc instead.")
+        elif voice_engine != "Play3.0-mini-grpc":
+            raise ValueError("Only Play3.0-mini-grpc is supported in the gRPC API")
+
+        language_identifier = None
+        if self.language is not None:
+            language_identifier = LanguageIdentifiers[self.language]
         params = api_pb2.TtsParams(
             text=text,
             voice=self.voice,
             format=self.format,
             quality=api_pb2.QUALITY_DRAFT,  # DEPRECATED (use sample rate to adjust audio quality)
             sample_rate=self.sample_rate,
+            language_identifier=language_identifier,
             speed=self.speed,
         )
         # If the hyperparams are unset, let the proto fallback to default.
@@ -220,7 +271,7 @@ class Client:
         metrics_buffer_size: int = 1000
         remove_ssml_tags: bool = False
 
-        # gRPC (PlayHT2.0 and earlier)
+        # gRPC (PlayHT2.0-turbo and Play3.0-mini-grpc)
         grpc_addr: str | None = None
         insecure: bool = False
         fallback_enabled: bool = False
@@ -415,6 +466,8 @@ class Client:
                 return self._tts_http(text, options, voice_engine, metrics)
             elif voice_engine == "Play3.0-mini-ws" or voice_engine == "Play3.0-ws":
                 return self._tts_ws(text, options, voice_engine, metrics)
+            elif voice_engine == "Play3.0-mini-grpc":
+                return self._tts_grpc(text, options, voice_engine, metrics)
             else:
                 return self._tts_grpc(text, options, voice_engine, metrics)
         except Exception as e:
@@ -428,8 +481,11 @@ class Client:
             voice_engine: str | None,
             metrics: Metrics
     ) -> Iterable[bytes]:
-        if voice_engine is not None and voice_engine.startswith("Play3.0"):
-            raise ValueError("Play3.0-* models are only supported in the HTTP and WebSocket APIs, not in the gRPC API.")
+
+        if voice_engine is None:
+            voice_engine = "Play3.0-mini-grpc"
+        elif voice_engine != "Play3.0-mini-grpc" and voice_engine != "PlayHT2.0-turbo":
+            raise ValueError("Only Play3.0-mini-grpc and PlayHT2.0-turbo are supported in the gRPC API")
 
         start = time.perf_counter()
         self.refresh_lease()
