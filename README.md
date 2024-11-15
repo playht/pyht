@@ -82,6 +82,7 @@ The `tts` method takes the following arguments:
 - `voice_engine`: The voice engine to use for the TTS request.
     - `Play3.0-mini-http` (default): Our latest multilingual model, streaming audio over HTTP. (NOTE that it is `Play` not `PlayHT` like previous voice engines)
     - `Play3.0-mini-ws`: Our latest multilingual model, streaming audio over WebSockets. (NOTE that it is `Play` not `PlayHT` like previous voice engines)
+    - `Play3.0-mini-grpc`: Our latest multilingual model, streaming audio over gRPC.  Use this voice engine if you're using Play On-Prem. (NOTE that it is `Play` not `PlayHT` like previous voice engines)
     - `PlayHT2.0-turbo`: Our legacy English-only model, streaming audio over gRPC.
 
 ### TTSOptions
