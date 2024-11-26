@@ -173,11 +173,9 @@ class TTSOptions:
     def tts_params(self, text: list[str], voice_engine: str | None) -> api_pb2.TtsParams:
 
         if voice_engine is None:
-            voice_engine = "Play3.0-mini-grpc"
-        if voice_engine == "PlayHT2.0-turbo":
-            logging.warning("Voice engine PlayHT2.0-turbo is deprecated; use Play3.0-mini-grpc instead.")
-        elif voice_engine != "Play3.0-mini-grpc":
-            raise ValueError("Only Play3.0-mini-grpc is supported in the gRPC API")
+            voice_engine = "PlayHT2.0-turbo"
+        elif voice_engine != "Play3.0-mini-grpc" and voice_engine != "PlayHT2.0-turbo":
+            raise ValueError("Only PlayHT2.0-turbo and Play3.0-mini-grpc (on-prem only) are supported in the gRPC API")
 
         language_identifier = None
         if self.language is not None:
@@ -247,7 +245,7 @@ def http_prepare_dict(text: List[str], options: TTSOptions, voice_engine: str) -
 
 class CongestionCtrl(Enum):
     """
-    Enumerates a streaming congestion control algorithms, used to optimize the rate at which text is sent to PlayHT.
+    Enumerates a streaming congestion control algorithms, used to optimize the rate at which text is sent to Play.
     """
 
     # The client will not do any congestion control.
@@ -258,7 +256,7 @@ class CongestionCtrl(Enum):
     # Then it will fall back to the fallback address (if one is configured).  No retry attempts will be made
     # against the fallback address.
     #
-    # If you're using PlayHT On-Prem, you should probably be using this congestion control algorithm.
+    # If you're using Play On-Prem, you should probably be using this congestion control algorithm.
     STATIC_MAR_2023 = 1
 
 
@@ -443,7 +441,7 @@ class Client:
         options: TTSOptions,
         voice_engine: str | None = None
     ) -> Iterable[bytes]:
-        """Stream input to Play.ht via the text_stream object."""
+        """Stream input to Play via the text_stream object."""
         buffer = io.StringIO()
         for text in text_stream:
             t = text.strip()
@@ -486,7 +484,7 @@ class Client:
     ) -> Iterable[bytes]:
 
         if voice_engine is None:
-            voice_engine = "Play3.0-mini-grpc"
+            voice_engine = "PlayHT2.0-turbo"
         elif voice_engine != "Play3.0-mini-grpc" and voice_engine != "PlayHT2.0-turbo":
             raise ValueError("Only Play3.0-mini-grpc and PlayHT2.0-turbo are supported in the gRPC API")
 

@@ -186,7 +186,7 @@ class AsyncClient:
             await asyncio.sleep(refresh_time.total_seconds())
 
     async def refresh_lease(self):
-        """Manually refresh credentials with Play.ht."""
+        """Manually refresh credentials with Play."""
         async with self._lock:
             if self._lease and self._lease.expires > datetime.now() + timedelta(minutes=5):
                 # Lease is still valid for at least the next 5 minutes.
@@ -230,7 +230,7 @@ class AsyncClient:
         options: TTSOptions,
         voice_engine: str | None = None,
     ):
-        """Stream input to Play.ht via the text_stream object."""
+        """Stream input to Play via the text_stream object."""
         buffer = io.StringIO()
         async for text in text_stream:
             t = text.strip()
@@ -276,7 +276,7 @@ class AsyncClient:
     ) -> AsyncIterable[bytes]:
 
         if voice_engine is None:
-            voice_engine = "Play3.0-mini-grpc"
+            voice_engine = "PlayHT2.0-turbo"
         elif voice_engine != "Play3.0-mini-grpc" and voice_engine != "PlayHT2.0-turbo":
             raise ValueError("Only Play3.0-mini-grpc and PlayHT2.0-turbo are supported in the gRPC API")
 

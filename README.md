@@ -1,13 +1,13 @@
-# PlayHT API SDK
+# Play API SDK
 
-**pyht** is a Python SDK for [PlayHT's AI Text-to-Speech API](https://play.ht/text-to-speech-api/). PlayHT builds conversational voice AI models for realtime use cases. With **pyht**, you can easily convert text into high-quality audio streams with humanlike voices.
+**pyht** is a Python SDK for [Play's AI Text-to-Speech API](https://play.ht/text-to-speech-api/). Play builds conversational voice AI models for realtime use cases. With **pyht**, you can easily convert text into high-quality audio streams with humanlike voices.
 
-Currently the library supports only streaming text-to-speech. For the full set of functionalities provided by the PlayHT API such as [Voice Cloning](https://docs.play.ht/reference/api-create-instant-voice-clone), see the [PlayHT docs](https://docs.play.ht/reference/api-getting-started)
+Currently the library supports only streaming text-to-speech. For the full set of functionalities provided by the Play API such as [Voice Cloning](https://docs.play.ht/reference/api-create-instant-voice-clone), see the [Play docs](https://docs.play.ht/reference/api-getting-started)
 
 ## Features
 
 - Stream text-to-speech in real-time, synchronous or asynchronous.
-- Use PlayHT's pre-built voices or create custom voice clones.
+- Use Play's pre-built voices or create custom voice clones.
 - Stream text from LLM, and generate audio stream in real-time.
 - Supports WAV, MP3, Mulaw, FLAC, and OGG audio formats as well as raw audio.
 - Supports 8KHz, 16KHz, 24KHz, 44.1KHz and 48KHz sample rates.
@@ -80,9 +80,10 @@ The `tts` method takes the following arguments:
 - `options`: The options to use for the TTS request.
     - a `TTSOptions` object (see below).
 - `voice_engine`: The voice engine to use for the TTS request.
-    - `Play3.0-mini-http` (default): Our latest multilingual model, streaming audio over HTTP. (NOTE that it is `Play` not `PlayHT` like previous voice engines)
-    - `Play3.0-mini-ws`: Our latest multilingual model, streaming audio over WebSockets. (NOTE that it is `Play` not `PlayHT` like previous voice engines)
-    - `Play3.0-mini-grpc`: Our latest multilingual model, streaming audio over gRPC.  Use this voice engine if you're using Play On-Prem. (NOTE that it is `Play` not `PlayHT` like previous voice engines)
+    - `Play3.0-mini` models: Our fast multilingual model. NOTE: it is `Play` not `PlayHT` like previous voice engines
+        - `Play3.0-mini-http` (default): Streaming audio over HTTP.
+        - `Play3.0-mini-ws`: Streaming audio over WebSockets.
+        - `Play3.0-mini-grpc`: Streaming audio over gRPC. NOTE: Use this voice engine ONLY if you're using Play On-Prem.
     - `PlayHT2.0-turbo`: Our legacy English-only model, streaming audio over gRPC.
 
 ### TTSOptions
@@ -107,7 +108,7 @@ The `TTSOptions` class is used to specify the options for the TTS request. It ha
 - `quality`: DEPRECATED (use sample rate to adjust audio quality)
 - `speed`: The speed of the audio to be returned, a float (default 1.0).
 - `seed`: Random seed to use for audio generation, an integer (default None, will be randomly generated).
-- The following options are inference-time hyperparameters of the text-to-speech model; if unset, the model will use default values chosen by PlayHT.
+- The following options are inference-time hyperparameters of the text-to-speech model; if unset, the model will use default values chosen by Play.
     - `temperature`: The temperature of the model, a float.
     - `top_p`: The top_p of the model, a float.
     - `text_guidance`: The text_guidance of the model, a float.

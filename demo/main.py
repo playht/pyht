@@ -176,10 +176,10 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--user", "-u", type=str, required=True, help="Your Play.ht User ID."
+        "--user", "-u", type=str, required=True, help="Your Play User ID."
     )
     parser.add_argument(
-        "--key", "-k", type=str, required=True, help="Your Play.ht API key."
+        "--key", "-k", type=str, required=True, help="Your Play API key."
     )
     parser.add_argument(
         "--voice",
