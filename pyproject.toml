@@ -40,7 +40,7 @@ websockets = "^13.1"
 
 [tool.poetry.group.docs.dependencies]
 sphinx = "~7.1.2"
-sphinx_rtd_theme = "~3.0.1"
+sphinx_rtd_theme = "~3.0.2"
 gitpython = ">=3.1.31"
 sphinx-copybutton = "^0.5.2"
 
