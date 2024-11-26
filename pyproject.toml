@@ -31,7 +31,7 @@ generate-setup-file = false
 [tool.poetry.dependencies]
 # Be as loose as possible if writing a library.
 python = "^3.8"
-grpcio = "^1.67.1"
+grpcio = "^1.68.0"
 filelock = "^3.12.4"
 protobuf = "^5.28.2"
 requests = "^2.31.0"
