@@ -8,6 +8,9 @@ from typing import Callable, Awaitable, Optional, Dict, Any
 
 import aiohttp
 
+REQUIRED_MODELS = ["Play3.0-mini", "PlayDialog"]
+REQUIRED_URLS = ["http_streaming_url", "websocket_url"]
+
 
 @dataclass
 class InferenceCoordinatesOptions:
@@ -52,21 +55,25 @@ def get_coordinates(user_id: str, api_key: str,
             coordinates = options.coordinates_generator_function(user_id, api_key, options)
         else:
             coordinates = default_coordinates_generator(user_id, api_key, options)
+        assert "expires_at_ms" in coordinates, "Coordinates response must contain expires_at_ms"
         # schedule next refresh
         coordinates["refresh_at_ms"] = min(coordinates["expires_at_ms"] -
                                            options.coordinates_expiration_advance_refresh_ms,
                                            time.time_ns() // 1000000 +
                                            options.coordinates_expiration_minimal_frequency_ms)
-        for model in coordinates.keys():
-            if model.startswith("Play"):
-                coordinates[model]["http_nonstreaming_url"] = \
-                    coordinates[model]["http_streaming_url"].replace("stream", "")
+        for model in REQUIRED_MODELS:
+            assert model in coordinates, f"Coordinates response must contain model {model}"
+            for url in REQUIRED_URLS:
+                assert url in coordinates[model], \
+                    f"Coordinates response must contain {url} for model {model}"
+            coordinates[model]["http_nonstreaming_url"] = \
+                coordinates[model]["http_streaming_url"].replace("stream", "")
         return coordinates
     except Exception as e:
         if attempt >= options.coordinates_get_api_call_max_retries:
             raise e
         else:
-            time.sleep(0.5 * (attempt + 1))
+            time.sleep(0.5 ** (attempt + 1))
             return get_coordinates(user_id, api_key, options, attempt + 1)
 
 
@@ -77,19 +84,23 @@ async def get_coordinates_async(user_id: str, api_key: str,
             coordinates = await options.coordinates_generator_function_async(user_id, api_key, options)
         else:
             coordinates = await default_coordinates_generator_async(user_id, api_key, options)
+        assert "expires_at_ms" in coordinates, "Coordinates response must contain expires_at_ms"
         # schedule next refresh
         coordinates["refresh_at_ms"] = min(coordinates["expires_at_ms"] -
                                            options.coordinates_expiration_advance_refresh_ms,
                                            time.time_ns() // 1000000 +
                                            options.coordinates_expiration_minimal_frequency_ms)
-        for model in coordinates.keys():
-            if model.startswith("Play"):
-                coordinates[model]["http_nonstreaming_url"] = \
-                    coordinates[model]["http_streaming_url"].replace("stream", "")
+        for model in REQUIRED_MODELS:
+            assert model in coordinates, f"Coordinates response must contain model {model}"
+            for url in REQUIRED_URLS:
+                assert url in coordinates[model], \
+                    f"Coordinates response must contain {url} for model {model}"
+            coordinates[model]["http_nonstreaming_url"] = \
+                coordinates[model]["http_streaming_url"].replace("stream", "")
         return coordinates
     except Exception as e:
         if attempt >= options.coordinates_get_api_call_max_retries:
             raise e
         else:
-            await asyncio.sleep(0.5 * (attempt + 1))
+            await asyncio.sleep(0.5 ** (attempt + 1))
             return await get_coordinates_async(user_id, api_key, options, attempt + 1)

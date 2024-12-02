@@ -123,8 +123,9 @@ class AsyncClient:
             asyncio.ensure_future(self.warmup())
 
     async def ensure_inference_coordinates(self, force: bool = False):
-        if self._inference_coordinates is None or \
-                self._inference_coordinates["refresh_at_ms"] < time.time_ns() // 1000000 or force:
+        if any([self._inference_coordinates is None,
+                self._inference_coordinates["refresh_at_ms"] < time.time_ns() // 1000000,  # pyright: ignore
+                force]):
             if self._advanced.inference_coordinates_options.coordinates_generator_function_async is not None:
                 self._inference_coordinates = await self._advanced.inference_coordinates_options.\
                         coordinates_generator_function_async(self._user_id, self._api_key,
@@ -406,7 +407,7 @@ class AsyncClient:
                             chunked=True
                     ) as response:
                         if response.status != 200:
-                            raise Exception(f"HTTP {response.status}: {response.text()}", response.status)
+                            raise Exception(f"HTTP {response.status}: {await response.text()}", response.status)
                         chunk_idx = -1
                         async for chunk in response.content.iter_any():
                             chunk_idx += 1

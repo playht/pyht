@@ -77,7 +77,7 @@ async for chunk in client.tts("Hi, I'm Jennifer from Play. How can I help you to
 The `tts` method takes the following arguments:
 
 - `text`: The text to be converted to speech; a string or list of strings.
-- `options`: The options to use for the TTS request; a `TTSOptions` object (see below).
+- `options`: The options to use for the TTS request; a `TTSOptions` object [(see below)](#ttsoptions).
 - `voice_engine`: The voice engine to use for the TTS request; a string (default `Play3.0-mini-http`).
     - `PlayDialog-*`: Our large, expressive multilingual model, which also supports multi-turn two-speaker dialogues.
         - `PlayDialog-http`: Streaming and non-streaming audio over HTTP.
@@ -102,24 +102,24 @@ The `TTSOptions` class is used to specify the options for the TTS request. It ha
     - `FORMAT_FLAC`
     - `FORMAT_OGG`
     - `FORMAT_RAW`
-- `sample_rate`: The sample rate of the audio to be returned; an integer or None (Play backend will choose by default).
+- `sample_rate`: The sample rate of the audio to be returned; an integer or `None` (Play backend will choose by default).
     - 8000
     - 16000
     - 24000
     - 44100
     - 48000
 - `quality`: DEPRECATED (use sample rate to adjust audio quality)
-- `speed`: The speed of the audio to be returned, a float (default 1.0).
-- `seed`: Random seed to use for audio generation, an integer (default None, will be randomly generated).
+- `speed`: The speed of the audio to be returned, a float (default `1.0`).
+- `seed`: Random seed to use for audio generation, an integer (default `None`, will be randomly generated).
 - The following options are inference-time hyperparameters of the text-to-speech model; if unset, the model will use default values chosen by Play.
     - `temperature` (all models): The temperature of the model, a float.
     - `top_p` (all models): The top_p of the model, a float.
-    - `text_guidance` (Play3.0-mini-* and PlayHT2.0-turbo only): The text_guidance of the model, a float.
-    - `voice_guidance` (Play3.0-mini-* and PlayHT2.0-turbo only): The voice_guidance of the model, a float.
-    - `style_guidance` (Play3.0-mini-* only): The style_guidance of the model, a float.
-    - `repetition_penalty` (Play3.0-mini-* and PlayHT2.0-turbo only): The repetition_penalty of the model, a float.
-- `disable_stabilization` (PlayHT2.0-turbo only): Disable the audio stabilization process, a boolean (default False).
-- `language` (Play3.0-* and PlayDialog-* only): The language of the text to be spoken, a `Language` enum value or None (default English).
+    - `text_guidance` (`Play3.0-mini-*` and `PlayHT2.0-turbo` only): The text_guidance of the model, a float.
+    - `voice_guidance` (`Play3.0-mini-*` and `PlayHT2.0-turbo` only): The voice_guidance of the model, a float.
+    - `style_guidance` (`Play3.0-mini-*` only): The style_guidance of the model, a float.
+    - `repetition_penalty` (`Play3.0-mini-*` and `PlayHT2.0-turbo` only): The repetition_penalty of the model, a float.
+- `disable_stabilization` (`PlayHT2.0-turbo` only): Disable the audio stabilization process, a boolean (default `False`).
+- `language` (`Play3.0-*` and `PlayDialog-*` only): The language of the text to be spoken, a `Language` enum value or `None` (default `ENGLISH`).
     - `AFRIKAANS`
     - `ALBANIAN`
     - `AMHARIC`
@@ -157,7 +157,7 @@ The `TTSOptions` class is used to specify the options for the TTS request. It ha
     - `UKRAINIAN`
     - `URDU`
     - `XHOSA`
-- The following options are additional inference-time hyperparameters which only apply to the PlayDialog-* model; if unset, the model will use default values chosen by Play.
+- The following options are additional inference-time hyperparameters which only apply to the `PlayDialog-*` model; if unset, the model will use default values chosen by Play.
     - `voice_2` (multi-turn dialogue only): The second voice to use for a multi-turn TTS request; a string.
         - A URL pointing to a Play voice manifest file.
     - `turn_prefix` (multi-turn dialogue only): The prefix for the first speaker's turns in a multi-turn TTS request; a string.
@@ -167,18 +167,18 @@ The `TTSOptions` class is used to specify the options for the TTS request. It ha
     - `scene_description`: A description of the overall scene (single- or multi-turn) to guide the model; a string (NOTE: currently not recommended).
     - `turn_clip_description` (multi-turn dialogue only): A description of each turn (with turn prefixes) to guide the model; a string (NOTE: currently not recommended).
     - `num_candidates`: How many candidates to rank to choose the best one; an integer.
-    - `candidate_ranking_method`: The method for the model to use to rank candidates; a `CandidateRankingMethod` enum value or None (let Play choose the method by default).
+    - `candidate_ranking_method`: The method for the model to use to rank candidates; a `CandidateRankingMethod` enum value or `None` (let Play choose the method by default).
         - Methods valid for streaming and non-streaming requests:
-            - `MeanProbRank`
+            - `MeanProbRank`: Rank candidates based on mean probability of the output sequence.
         - Methods valid for streaming requests only:
-            - `EndProbRank`
-            - `MeanProbWithEndProbRank`
+            - `EndProbRank`: Rank candidates based on probability of end of sequence.
+            - `MeanProbWithEndProbRank`: Combination of `MeanProbRank` and `EndProbRank`.
         - Methods valid for non-streaming requests only:
-            - `DescriptionRank`
-            - `ASRRank`
-            - `DescriptionASRRank`
-            - `ASRWithMeanProbRank`
-            - `DescriptionASRWithMeanProbRank`
+            - `DescriptionRank`: Rank candidates based on adherence to description.
+            - `ASRRank`: Rank candidates based on comparison of ASR transcription with the ground-truth text.
+            - `DescriptionASRRank`: Combination of `DescriptionRank` and `ASRRank`.
+            - `ASRWithMeanProbRank`: Combination of `ASRRank` and `MeanProbRank`.
+            - `DescriptionASRWithMeanProbRank`: Combination of `DescriptionASRRank` and `MeanProbRank`.
 
 
 ## Command-Line Demo

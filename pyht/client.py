@@ -213,7 +213,7 @@ class TTSOptions:
         if voice_engine is None:
             voice_engine = "PlayHT2.0-turbo"
         elif voice_engine != "Play3.0-mini" and voice_engine != "PlayHT2.0-turbo":
-            raise ValueError(f"Only PlayHT2.0-turbo and Play3.0-mini (on-prem only) are supported in the gRPC API; got {voice_engine}")
+            raise ValueError(f"gRPC API only supports PlayHT2.0-turbo, Play3.0-mini (on-prem only); got {voice_engine}")
 
         language_identifier = None
         if self.language is not None:
@@ -304,7 +304,7 @@ def http_prepare_dict(text: List[str], options: TTSOptions, voice_engine: str) -
 
 class CongestionCtrl(Enum):
     """
-    Enumerates a streaming congestion control algorithms, used to optimize the rate at which text is sent to Play.
+    Enumerates a streaming congestion control algorithm, used to optimize the rate at which text is sent to Play.
     """
 
     # The client will not do any congestion control.
@@ -390,8 +390,9 @@ class Client:
             self.warmup()
 
     def ensure_inference_coordinates(self, force: bool = False):
-        if self._inference_coordinates is None or \
-                self._inference_coordinates["refresh_at_ms"] < time.time_ns() // 1000000 or force:
+        if any([self._inference_coordinates is None,
+                self._inference_coordinates["refresh_at_ms"] < time.time_ns() // 1000000,  # pyright: ignore
+                force]):
             if self._advanced.inference_coordinates_options.coordinates_generator_function is not None:
                 self._inference_coordinates = self._advanced.inference_coordinates_options.\
                     coordinates_generator_function(self._user_id, self._api_key,
