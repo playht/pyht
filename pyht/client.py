@@ -390,9 +390,9 @@ class Client:
             self.warmup()
 
     def ensure_inference_coordinates(self, force: bool = False):
-        if any([self._inference_coordinates is None,
-                self._inference_coordinates["refresh_at_ms"] < time.time_ns() // 1000000,  # pyright: ignore
-                force]):
+        if self._inference_coordinates is None or \
+                self._inference_coordinates["refresh_at_ms"] < time.time_ns() // 1000000 or \
+                force:
             if self._advanced.inference_coordinates_options.coordinates_generator_function is not None:
                 self._inference_coordinates = self._advanced.inference_coordinates_options.\
                     coordinates_generator_function(self._user_id, self._api_key,
