@@ -28,7 +28,7 @@ message TtsParams {
   string voice = 2;
   // Quality of the generated audio.
   optional Quality quality = 3;
-  
+
   // Audio format to return.
   optional Format format = 4;
   // Sample rate to return in hz. Native sample rate is 24000 hz (default).
@@ -60,7 +60,7 @@ enum Code {
   CODE_CANCELED = 3;
   CODE_ERROR = 4;
 }
-  
+
 // Quality levels
 enum Quality {
   QUALITY_UNSPECIFIED = 0;  // Defaults to 'DRAFT' quality.
@@ -70,7 +70,7 @@ enum Quality {
   QUALITY_HIGH = 4;
   QUALITY_PREMIUM = 5;
 }
-  
+
 // Audio formats.
 enum Format {
   FORMAT_RAW = 0; // raw fp32 PCM samples
@@ -79,8 +79,9 @@ enum Format {
   FORMAT_OGG = 3; // 80kbps OGG Vorbis
   FORMAT_FLAC = 4; // 16-bit (int16) FLAC
   FORMAT_MULAW = 5; // 8-bit (uint8) PCM headerless
+  FORMAT_PCM = 6; // 16-bit PCM, no WAV header
 }
-  
+
 message Status {
   Code code = 1;
   repeated string message = 2;

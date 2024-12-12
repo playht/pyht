@@ -52,6 +52,7 @@ class HTTPFormat(Enum):
     FORMAT_OGG = "ogg"
     FORMAT_FLAC = "flac"
     FORMAT_MULAW = "mulaw"
+    FORMAT_PCM = "pcm"
 
 
 # PlayDialog-* only
@@ -580,6 +581,8 @@ class Client:
         text = prepare_text(text, self._advanced.remove_ssml_tags)
         metrics.append("text", str(text)).append("endpoint", str(self._rpc[0]))
 
+        if options.format == Format.FORMAT_PCM:
+            raise ValueError("PCM format is not supported in the gRPC API")
         request = api_pb2.TtsRequest(params=options.tts_params(text, voice_engine), lease=lease_data)
 
         for attempt in range(1, self._max_attempts + 1):
