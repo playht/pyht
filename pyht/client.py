@@ -23,7 +23,6 @@ import requests
 from .inference_coordinates import get_coordinates, InferenceCoordinatesOptions
 from .lease import Lease, LeaseFactory
 from .protos import api_pb2, api_pb2_grpc
-from .protos.api_pb2 import Format
 from .telemetry import Metrics, Telemetry
 from .utils import prepare_text, SENTENCE_END_REGEX
 
@@ -45,6 +44,16 @@ CLIENT_RETRY_OPTIONS = [
     ]
 
 
+class Format(Enum):
+    FORMAT_RAW = api_pb2.FORMAT_RAW
+    FORMAT_MP3 = api_pb2.FORMAT_MP3
+    FORMAT_WAV = api_pb2.FORMAT_WAV
+    FORMAT_OGG = api_pb2.FORMAT_OGG
+    FORMAT_FLAC = api_pb2.FORMAT_FLAC
+    FORMAT_MULAW = api_pb2.FORMAT_MULAW
+    FORMAT_PCM = api_pb2.FORMAT_PCM
+
+
 class HTTPFormat(Enum):
     FORMAT_RAW = "raw"
     FORMAT_MP3 = "mp3"
@@ -52,6 +61,7 @@ class HTTPFormat(Enum):
     FORMAT_OGG = "ogg"
     FORMAT_FLAC = "flac"
     FORMAT_MULAW = "mulaw"
+    FORMAT_PCM = "pcm"
 
 
 # PlayDialog-* only
@@ -83,6 +93,8 @@ def grpc_format_to_http_format(format: Format) -> HTTPFormat:
         return HTTPFormat.FORMAT_FLAC
     elif format == Format.FORMAT_MULAW:
         return HTTPFormat.FORMAT_MULAW
+    elif format == Format.FORMAT_PCM:
+        return HTTPFormat.FORMAT_PCM
     else:
         raise ValueError(f"Unsupported format for HTTP API: {format}")
 
@@ -221,7 +233,7 @@ class TTSOptions:
         params = api_pb2.TtsParams(
             text=text,
             voice=self.voice,
-            format=self.format,
+            format=self.format.value,
             quality=api_pb2.QUALITY_DRAFT,  # DEPRECATED (use sample rate to adjust audio quality)
             sample_rate=self.sample_rate,
             language_identifier=language_identifier,
@@ -580,6 +592,8 @@ class Client:
         text = prepare_text(text, self._advanced.remove_ssml_tags)
         metrics.append("text", str(text)).append("endpoint", str(self._rpc[0]))
 
+        if options.format == Format.FORMAT_PCM:
+            raise ValueError("PCM format is not supported in the gRPC API")
         request = api_pb2.TtsRequest(params=options.tts_params(text, voice_engine), lease=lease_data)
 
         for attempt in range(1, self._max_attempts + 1):
@@ -874,5 +888,5 @@ class _OutputStream(Iterator[bytes]):
         self._close.set()
 
 
-def _audio_begins_at(fmt: api_pb2.Format) -> int:
-    return 0 if fmt in {api_pb2.Format.FORMAT_RAW, api_pb2.Format.FORMAT_MULAW} else 1
+def _audio_begins_at(fmt: Format) -> int:
+    return 0 if fmt in {Format.FORMAT_RAW, Format.FORMAT_MULAW} else 1

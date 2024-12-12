@@ -21,7 +21,7 @@ from grpc import ssl_channel_credentials, StatusCode
 from grpc.aio import Call, Channel, insecure_channel, secure_channel, UnaryStreamCall
 
 from .client import _audio_begins_at, CLIENT_RETRY_OPTIONS, CongestionCtrl, \
-        http_prepare_dict, output_format_to_mime_type, TTSOptions
+        http_prepare_dict, output_format_to_mime_type, TTSOptions, Format
 from .inference_coordinates import get_coordinates_async, InferenceCoordinatesOptions
 from .lease import Lease, LeaseFactory
 from .protos import api_pb2, api_pb2_grpc
@@ -312,6 +312,8 @@ class AsyncClient:
         text = prepare_text(text, self._advanced.remove_ssml_tags)
         metrics.append("text", str(text)).append("endpoint", str(self._rpc[0]))
 
+        if options.format == Format.FORMAT_PCM:
+            raise ValueError("PCM format is not supported in the gRPC API")
         request = api_pb2.TtsRequest(params=options.tts_params(text, voice_engine), lease=lease_data)
 
         for attempt in range(1, self._max_attempts + 1):
