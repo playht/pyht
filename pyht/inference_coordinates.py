@@ -14,7 +14,7 @@ REQUIRED_URLS = ["http_streaming_url", "websocket_url"]
 
 @dataclass
 class InferenceCoordinatesOptions:
-    api_url: str = "https://api.play.ht/api/v3"
+    api_url: str = "https://api.play.ht/api/v4"
     coordinates_generator_function: Optional[Callable[[str, str, InferenceCoordinatesOptions],
                                                       Dict[str, Any]]] = None
     coordinates_generator_function_async: Optional[Callable[[str, str, InferenceCoordinatesOptions],
@@ -27,7 +27,7 @@ class InferenceCoordinatesOptions:
 def default_coordinates_generator(user_id: str, api_key: str,
                                   options: InferenceCoordinatesOptions) -> Dict[str, Any]:
     try:
-        response = requests.post(f"{options.api_url}/auth?dialog",
+        response = requests.post(f"{options.api_url}/sdk-auth",
                                  headers={"x-user-id": user_id, "authorization": f"Bearer {api_key}"})
         response.raise_for_status()
         return response.json()
