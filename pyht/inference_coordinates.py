@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from datetime import datetime
 import requests
 import time
 from typing import Callable, Awaitable, Optional, Dict, Any
 
 import aiohttp
 
-REQUIRED_MODELS = ["Play3.0-mini", "PlayDialog"]
+REQUIRED_MODELS = ["Play3.0-mini", "PlayDialog", "PlayDialogMultilingual"]
 REQUIRED_URLS = ["http_streaming_url", "websocket_url"]
 
 
@@ -55,12 +56,12 @@ def get_coordinates(user_id: str, api_key: str,
             coordinates = options.coordinates_generator_function(user_id, api_key, options)
         else:
             coordinates = default_coordinates_generator(user_id, api_key, options)
-        assert "expires_at_ms" in coordinates, "Coordinates response must contain expires_at_ms"
+        assert "expires_at" in coordinates, "Coordinates response must contain expires_at"
         # schedule next refresh
-        coordinates["refresh_at_ms"] = min(coordinates["expires_at_ms"] -
-                                           options.coordinates_expiration_advance_refresh_ms,
-                                           time.time_ns() // 1000000 +
-                                           options.coordinates_expiration_minimal_frequency_ms)
+        dt = datetime.strptime(coordinates["expires_at"], "%Y-%m-%dT%H:%M:%S.%fZ")
+        expires_at_ms = int(dt.timestamp() * 1000)
+        coordinates["refresh_at_ms"] = min(expires_at_ms - options.coordinates_expiration_advance_refresh_ms,
+                                           time.time() * 1000 + options.coordinates_expiration_minimal_frequency_ms)
         for model in REQUIRED_MODELS:
             assert model in coordinates, f"Coordinates response must contain model {model}"
             for url in REQUIRED_URLS:
@@ -86,10 +87,10 @@ async def get_coordinates_async(user_id: str, api_key: str,
             coordinates = await default_coordinates_generator_async(user_id, api_key, options)
         assert "expires_at_ms" in coordinates, "Coordinates response must contain expires_at_ms"
         # schedule next refresh
-        coordinates["refresh_at_ms"] = min(coordinates["expires_at_ms"] -
-                                           options.coordinates_expiration_advance_refresh_ms,
-                                           time.time_ns() // 1000000 +
-                                           options.coordinates_expiration_minimal_frequency_ms)
+        dt = datetime.strptime(coordinates["expires_at"], "%Y-%m-%dT%H:%M:%S.%fZ")
+        expires_at_ms = int(dt.timestamp() * 1000)
+        coordinates["refresh_at_ms"] = min(expires_at_ms - options.coordinates_expiration_advance_refresh_ms,
+                                           time.time() * 1000 + options.coordinates_expiration_minimal_frequency_ms)
         for model in REQUIRED_MODELS:
             assert model in coordinates, f"Coordinates response must contain model {model}"
             for url in REQUIRED_URLS:

@@ -79,9 +79,12 @@ The `tts` method takes the following arguments:
 - `text`: The text to be converted to speech; a string or list of strings.
 - `options`: The options to use for the TTS request; a `TTSOptions` object [(see below)](#ttsoptions).
 - `voice_engine`: The voice engine to use for the TTS request; a string (default `Play3.0-mini-http`).
-    - `PlayDialog-*`: Our large, expressive multilingual model, which also supports multi-turn two-speaker dialogues.
+    - `PlayDialog-*`: Our large, expressive English model, which also supports multi-turn two-speaker dialogues.
         - `PlayDialog-http`: Streaming and non-streaming audio over HTTP.
         - `PlayDialog-ws`: Streaming audio over WebSockets.
+    - `PlayDialogMultilingual-*`: Our large, expressive multilingual model, which also supports multi-turn two-speaker dialogues.
+        - `PlayDialogMultilingual-http`: Streaming and non-streaming audio over HTTP.
+        - `PlayDialogMultilingual-ws`: Streaming audio over WebSockets.
     - `Play3.0-mini-*`: Our small, fast multilingual model.
         - `Play3.0-mini-http`: Streaming and non-streaming audio over HTTP.
         - `Play3.0-mini-ws`: Streaming audio over WebSockets.
@@ -119,7 +122,7 @@ The `TTSOptions` class is used to specify the options for the TTS request. It ha
     - `style_guidance` (`Play3.0-mini-*` only): The style_guidance of the model, a float.
     - `repetition_penalty` (`Play3.0-mini-*` and `PlayHT2.0-turbo` only): The repetition_penalty of the model, a float.
 - `disable_stabilization` (`PlayHT2.0-turbo` only): Disable the audio stabilization process, a boolean (default `False`).
-- `language` (`Play3.0-*` and `PlayDialog-*` only): The language of the text to be spoken, a `Language` enum value or `None` (default `ENGLISH`).
+- `language` (`Play3.0-*` and `PlayDialogMultilingual-*` only): The language of the text to be spoken, a `Language` enum value or `None` (default `ENGLISH`).
     - `AFRIKAANS`
     - `ALBANIAN`
     - `AMHARIC`
@@ -157,7 +160,7 @@ The `TTSOptions` class is used to specify the options for the TTS request. It ha
     - `UKRAINIAN`
     - `URDU`
     - `XHOSA`
-- The following options are additional inference-time hyperparameters which only apply to the `PlayDialog-*` model; if unset, the model will use default values chosen by Play.
+- The following options are additional inference-time hyperparameters which only apply to the `PlayDialog-*` and `PlayDialogMultilingual-*` models; if unset, the model will use default values chosen by Play.
     - `voice_2` (multi-turn dialogue only): The second voice to use for a multi-turn TTS request; a string.
         - A URL pointing to a Play voice manifest file.
     - `turn_prefix` (multi-turn dialogue only): The prefix for the first speaker's turns in a multi-turn TTS request; a string.
