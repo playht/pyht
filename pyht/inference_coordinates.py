@@ -40,7 +40,7 @@ async def default_coordinates_generator_async(user_id: str, api_key: str,
                                               options: InferenceCoordinatesOptions) -> Dict[str, Any]:
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.post(f"{options.api_url}/auth?dialog",
+            async with session.post(f"{options.api_url}/sdk-auth",
                                     headers={"x-user-id": user_id,
                                              "authorization": f"Bearer {api_key}"}) as response:
                 response.raise_for_status()
@@ -85,7 +85,7 @@ async def get_coordinates_async(user_id: str, api_key: str,
             coordinates = await options.coordinates_generator_function_async(user_id, api_key, options)
         else:
             coordinates = await default_coordinates_generator_async(user_id, api_key, options)
-        assert "expires_at_ms" in coordinates, "Coordinates response must contain expires_at_ms"
+        assert "expires_at" in coordinates, "Coordinates response must contain expires_at"
         # schedule next refresh
         dt = datetime.strptime(coordinates["expires_at"], "%Y-%m-%dT%H:%M:%S.%fZ")
         expires_at_ms = int(dt.timestamp() * 1000)
