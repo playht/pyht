@@ -24,7 +24,7 @@ from .inference_coordinates import get_coordinates, InferenceCoordinatesOptions
 from .lease import Lease, LeaseFactory
 from .protos import api_pb2, api_pb2_grpc
 from .telemetry import Metrics, Telemetry
-from .utils import prepare_text, SENTENCE_END_REGEX
+from .utils import prepare_text, SENTENCE_END_REGEX, get_voice_engine_and_protocol
 
 
 CLIENT_RETRY_OPTIONS = [
@@ -531,21 +531,7 @@ class Client:
     ) -> Iterable[bytes]:
         metrics = self._telemetry.start("tts-request")
         try:
-            if voice_engine is None:
-                voice_engine = "Play3.0-mini"
-                protocol = "http"
-            elif voice_engine == "PlayHT2.0-turbo":
-                protocol = "grpc"
-            elif voice_engine == "Play3.0":
-                logging.warning("Voice engine Play3.0 is deprecated; use Play3.0-mini-http instead.")
-                voice_engine = "Play3.0-mini"
-                protocol = "http"
-            elif voice_engine == "Play3.0-ws":
-                logging.warning("Voice engine Play3.0-ws is deprecated; use Play3.0-mini-ws instead.")
-                voice_engine = "Play3.0-mini"
-                protocol = "ws"
-            else:
-                voice_engine, protocol = voice_engine.rsplit("-", 1)
+            voice_engine, protocol = get_voice_engine_and_protocol(voice_engine)
 
             if protocol == "http":
                 return self._tts_http(text, options, voice_engine, metrics, streaming)
