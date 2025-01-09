@@ -78,6 +78,7 @@ class CandidateRankingMethod(Enum):
     # streaming only
     EndProbRank = "end_prob"
     MeanProbWithEndProbRank = "mean_prob_with_end_prob"
+    XLSAlignerRank = "xls_aligner"
 
 
 def grpc_format_to_http_format(format: Format) -> HTTPFormat:
