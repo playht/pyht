@@ -230,6 +230,8 @@ class AsyncClient:
         text_stream: Union[AsyncGenerator[str, None], AsyncIterable[str]],
         options: TTSOptions,
         voice_engine: Optional[str] = None,
+        protocol: Optional[str] = None,
+        streaming: bool = True
     ):
         """Stream input to Play via the text_stream object."""
         buffer = io.StringIO()
@@ -239,12 +241,12 @@ class AsyncClient:
             buffer.write(" ")  # normalize word spacing.
             if SENTENCE_END_REGEX.match(t) is None:
                 continue
-            async for data in self.tts(buffer.getvalue(), options, voice_engine):
+            async for data in self.tts(buffer.getvalue(), options, voice_engine, protocol, streaming):
                 yield data
             buffer = io.StringIO()
         # If text_stream closes, send all remaining text, regardless of sentence structure.
         if buffer.tell() > 0:
-            async for data in self.tts(buffer.getvalue(), options, voice_engine):
+            async for data in self.tts(buffer.getvalue(), options, voice_engine, protocol, streaming):
                 yield data
 
     def tts(
@@ -252,24 +254,23 @@ class AsyncClient:
         text: Union[str, list[str]],
         options: TTSOptions,
         voice_engine: Optional[str] = None,
+        protocol: Optional[str] = None,
         streaming: bool = True
     ) -> AsyncIterable[bytes]:
         metrics = self._telemetry.start("tts-request")
         try:
-            voice_engine, protocol = get_voice_engine_and_protocol(voice_engine)
+            voice_engine, protocol = get_voice_engine_and_protocol(voice_engine, protocol)
 
             if protocol == "http":
                 return self._tts_http(text, options, voice_engine, metrics, streaming)
             elif protocol == "ws":
-                if streaming:
-                    return self._tts_ws(text, options, voice_engine, metrics)
-                else:
+                if not streaming:
                     raise ValueError("Non-streaming is not supported for WebSocket API")
+                return self._tts_ws(text, options, voice_engine, metrics)
             elif protocol == "grpc":
-                if streaming:
-                    return self._tts_grpc(text, options, voice_engine, metrics)
-                else:
+                if not streaming:
                     raise ValueError("Non-streaming is not supported for gRPC API")
+                return self._tts_grpc(text, options, voice_engine, metrics)
             else:
                 raise ValueError(f"Unknown protocol {protocol}")
         except Exception as e:
@@ -489,7 +490,8 @@ class AsyncClient:
     def get_stream_pair(
         self,
         options: TTSOptions,
-        voice_engine: Optional[str] = None
+        voice_engine: Optional[str] = None,
+        protocol: Optional[str] = None
     ) -> tuple['_InputStream', '_OutputStream']:
         """Get a linked pair of (input, output) streams.
 
@@ -498,7 +500,7 @@ class AsyncClient:
         """
         shared_q = asyncio.Queue()
         return (
-            _InputStream(self, options, shared_q, voice_engine),
+            _InputStream(self, options, shared_q, voice_engine, protocol),
             _OutputStream(shared_q)
         )
 
@@ -587,11 +589,12 @@ class _InputStream:
         options: TTSOptions,
         q: asyncio.Queue[Optional[bytes]],
         voice_engine: Optional[str],
+        protocol: Optional[str] = None
     ):
         self._input = TextStream()
 
         async def listen():
-            async for output in client.stream_tts_input(self._input, options, voice_engine):
+            async for output in client.stream_tts_input(self._input, options, voice_engine, protocol):
                 await q.put(output)
             await q.put(None)
 

@@ -64,7 +64,7 @@ class HTTPFormat(Enum):
     FORMAT_PCM = "pcm"
 
 
-# PlayDialog-* and PlayDialogMultilingual-* only
+# PlayDialog and PlayDialogMultilingual only
 class CandidateRankingMethod(Enum):
     # non-streaming only
     DescriptionASRWithMeanProbRank = "description_asr_with_mean_prob"
@@ -185,21 +185,21 @@ class TTSOptions:
     temperature: Optional[float] = None
     top_p: Optional[float] = None
 
-    # only applies to Play3.0-* and PlayHT2.0-turbo
+    # only apply to Play3.0 and PlayHT2.0-turbo
     text_guidance: Optional[float] = None
     voice_guidance: Optional[float] = None
     repetition_penalty: Optional[float] = None
 
-    # only applies to Play3.0-*
+    # only applies to Play3.0
     style_guidance: Optional[float] = None
 
-    # only applies to PlayHT2.0-*
+    # only applies to PlayHT2.0
     disable_stabilization: Optional[bool] = None
 
-    # only applies to Play3.0-* and PlayDialogMultilingual-*
+    # only applies to Play3.0 and PlayDialogMultilingual
     language: Optional[Language] = None
 
-    # only applies to PlayDialog-* and PlayDialogMultilingual-*
+    # only apply to PlayDialog and PlayDialogMultilingual
     # leave the _2 params None if generating single-speaker audio
     voice_2: Optional[str] = None
     turn_prefix: Optional[str] = None
@@ -293,7 +293,7 @@ def http_prepare_dict(text: List[str], options: TTSOptions, voice_engine: str) -
         "language": options.language.value if options.language is not None else None,
         "version": version,
 
-        # PlayDialog-* and PlayDialogMultilingual-*
+        # PlayDialog and PlayDialogMultilingual
         # leave the _2 params None if generating single-speaker audio
         "voice_2": options.voice_2,
         "turn_prefix": options.turn_prefix,
@@ -506,7 +506,9 @@ class Client:
         self,
         text_stream: Union[Generator[str, None, None], Iterable[str]],
         options: TTSOptions,
-        voice_engine: Optional[str] = None
+        voice_engine: Optional[str] = None,
+        protocol: Optional[str] = None,
+        streaming: bool = True
     ) -> Iterable[bytes]:
         """Stream input to Play.ht via the text_stream object."""
         buffer = io.StringIO()
@@ -516,35 +518,34 @@ class Client:
             buffer.write(" ")  # normalize word spacing.
             if SENTENCE_END_REGEX.match(t) is None:
                 continue
-            yield from self.tts(buffer.getvalue(), options, voice_engine)
+            yield from self.tts(buffer.getvalue(), options, voice_engine, protocol, streaming)
             buffer = io.StringIO()
         # If text_stream closes, send all remaining text, regardless of sentence structure.
         if buffer.tell() > 0:
-            yield from self.tts(buffer.getvalue(), options, voice_engine)
+            yield from self.tts(buffer.getvalue(), options, voice_engine, protocol, streaming)
 
     def tts(
             self,
             text: Union[str, List[str]],
             options: TTSOptions,
             voice_engine: Optional[str] = None,
+            protocol: Optional[str] = None,
             streaming: bool = True
     ) -> Iterable[bytes]:
         metrics = self._telemetry.start("tts-request")
         try:
-            voice_engine, protocol = get_voice_engine_and_protocol(voice_engine)
+            voice_engine, protocol = get_voice_engine_and_protocol(voice_engine, protocol)
 
             if protocol == "http":
                 return self._tts_http(text, options, voice_engine, metrics, streaming)
             elif protocol == "ws":
-                if streaming:
-                    return self._tts_ws(text, options, voice_engine, metrics)
-                else:
+                if not streaming:
                     raise ValueError("Non-streaming is not supported for WebSocket API")
+                return self._tts_ws(text, options, voice_engine, metrics)
             elif protocol == "grpc":
-                if streaming:
-                    return self._tts_grpc(text, options, voice_engine, metrics)
-                else:
+                if not streaming:
                     raise ValueError("Non-streaming is not supported for gRPC API")
+                return self._tts_grpc(text, options, voice_engine, metrics)
             else:
                 raise ValueError(f"Unknown protocol {protocol}")
         except Exception as e:
@@ -757,7 +758,8 @@ class Client:
     def get_stream_pair(
         self,
         options: TTSOptions,
-        voice_engine: Optional[str] = None
+        voice_engine: Optional[str] = None,
+        protocol: Optional[str] = None
     ) -> Tuple['_InputStream', '_OutputStream']:
         """Get a linked pair of (input, output) streams.
 
@@ -765,7 +767,7 @@ class Client:
         """
         shared_q = queue.Queue()
         return (
-            _InputStream(self, options, shared_q, voice_engine),
+            _InputStream(self, options, shared_q, voice_engine, protocol),
             _OutputStream(shared_q)
         )
 
@@ -818,11 +820,11 @@ class _InputStream:
        input_stream.done()
     """
     def __init__(self, client: Client, options: TTSOptions, q: queue.Queue[Optional[bytes]],
-                 voice_engine: Optional[str]):
+                 voice_engine: Optional[str], protocol: Optional[str] = None):
         self._input = TextStream()
 
         def listen():
-            for output in client.stream_tts_input(self._input, options, voice_engine):
+            for output in client.stream_tts_input(self._input, options, voice_engine, protocol):
                 q.put(output)
             q.put(None)
 
