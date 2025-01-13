@@ -66,17 +66,10 @@ class HTTPFormat(Enum):
 
 # PlayDialog-* and PlayDialogMultilingual-* only
 class CandidateRankingMethod(Enum):
-    MeanProbRank = "mean_prob"
-
     # non-streaming only
-    DescriptionRank = "description"
-    ASRRank = "asr"
-    DescriptionASRRank = "description_asr"
-    ASRWithMeanProbRank = "asr_with_mean_prob"
     DescriptionASRWithMeanProbRank = "description_asr_with_mean_prob"
 
     # streaming only
-    EndProbRank = "end_prob"
     MeanProbWithEndProbRank = "mean_prob_with_end_prob"
     XLSAlignerRank = "xls_aligner"
 
