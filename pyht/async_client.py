@@ -13,6 +13,7 @@ import time
 from typing import Any, Dict, AsyncGenerator, AsyncIterable, AsyncIterator, Coroutine, Tuple, Optional, Union
 import uuid
 from websockets.asyncio.client import connect, ClientConnection
+from websockets.exceptions import ConnectionClosed
 
 import aiohttp
 import filelock
@@ -455,7 +456,12 @@ class AsyncClient:
                 ws_address = self._inference_coordinates[voice_engine]["websocket_url"]
                 if self._ws is None:
                     self._ws = await connect(ws_address)
-                await self._ws.send(json.dumps(json_data))
+                try:
+                    await self._ws.send(json.dumps(json_data))
+                except ConnectionClosed as e:
+                    logging.debug(f"Reconnecting websocket which closed unexpectedly: {e}")
+                    self._ws = await connect(ws_address)
+                    await self._ws.send(json.dumps(json_data))
                 chunk_idx = -1
                 async for chunk in self._ws:
                     chunk_idx += 1

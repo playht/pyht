@@ -14,6 +14,7 @@ import threading
 import time
 import uuid
 from websockets.sync.client import connect, ClientConnection
+from websockets.exceptions import ConnectionClosed
 
 import filelock
 import grpc
@@ -724,7 +725,12 @@ class Client:
                 ws_address = self._inference_coordinates[voice_engine]["websocket_url"]
                 if self._ws is None:
                     self._ws = connect(ws_address)
-                self._ws.send(json.dumps(json_data))
+                try:
+                    self._ws.send(json.dumps(json_data))
+                except ConnectionClosed as e:
+                    logging.debug(f"Reconnecting websocket which closed unexpectedly: {e}")
+                    self._ws = connect(ws_address)
+                    self._ws.send(json.dumps(json_data))
                 chunk_idx = -1
                 for chunk in self._ws:
                     chunk_idx += 1
