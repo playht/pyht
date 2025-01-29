@@ -446,9 +446,7 @@ class AsyncClient:
         assert self._inference_coordinates is not None, "No connection"
         metrics.append("text", str(text)).append("endpoint",
                                                  str(self._inference_coordinates[voice_engine]["websocket_url"]))
-        request_id = str(uuid.uuid4())
         json_data = http_prepare_dict(text, options, voice_engine)
-        json_data["request_id"] = request_id
 
         for attempt in range(1, self._max_attempts + 1):
             try:
@@ -463,17 +461,23 @@ class AsyncClient:
                     self._ws = await connect(ws_address)
                     await self._ws.send(json.dumps(json_data))
                 chunk_idx = -1
+                request_id = -1
+                started = False
                 async for chunk in self._ws:
-                    chunk_idx += 1
                     if isinstance(chunk, str):
                         msg = json.loads(chunk)
-                        if msg["type"] == "end":
+                        if msg["type"] == "start":
+                            started = True
+                            request_id = msg["request_id"]
+                        elif msg["type"] == "end" and msg["request_id"] == request_id:
                             break
                         else:
                             continue
-                    elif chunk_idx == _audio_begins_at(options.format):
-                        metrics.set_timer("time-to-first-audio", time.perf_counter() - start)
-                    yield chunk
+                    elif started:
+                        chunk_idx += 1
+                        if chunk_idx == _audio_begins_at(options.format):
+                            metrics.set_timer("time-to-first-audio", time.perf_counter() - start)
+                        yield chunk
                 metrics.finish_ok()
                 break
             except Exception as e:
