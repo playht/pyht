@@ -463,10 +463,9 @@ class AsyncClient:
                 except ConnectionClosed as e:
                     logging.debug(f"Reconnecting websocket which closed unexpectedly: {e}")
                     self._ws = await connect(ws_address)
-                    self._ws_requests_sent = 0
-                    self._ws_responses_received = 0
                     await self._ws.send(json.dumps(json_data))
-                    self._ws_requests_sent += 1
+                    self._ws_requests_sent = 1
+                    self._ws_responses_received = 0
                 chunk_idx = -1
                 request_id = -1
                 started = False
