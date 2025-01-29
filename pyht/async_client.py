@@ -11,7 +11,6 @@ import sys
 import tempfile
 import time
 from typing import Any, Dict, AsyncGenerator, AsyncIterable, AsyncIterator, Coroutine, Tuple, Optional, Union
-import uuid
 from websockets.asyncio.client import connect, ClientConnection
 from websockets.exceptions import ConnectionClosed
 
@@ -110,6 +109,8 @@ class AsyncClient:
         self._api_key = api_key
         self._inference_coordinates: Optional[Dict[str, Any]] = None
         self._ws: Optional[ClientConnection] = None
+        self._ws_requests_sent = 0
+        self._ws_responses_received = 0
 
         if self._advanced.congestion_ctrl == CongestionCtrl.STATIC_MAR_2023:
             self._max_attempts = 3
@@ -454,12 +455,18 @@ class AsyncClient:
                 ws_address = self._inference_coordinates[voice_engine]["websocket_url"]
                 if self._ws is None:
                     self._ws = await connect(ws_address)
+                    self._ws_requests_sent = 0
+                    self._ws_responses_received = 0
                 try:
                     await self._ws.send(json.dumps(json_data))
+                    self._ws_requests_sent += 1
                 except ConnectionClosed as e:
                     logging.debug(f"Reconnecting websocket which closed unexpectedly: {e}")
                     self._ws = await connect(ws_address)
+                    self._ws_requests_sent = 0
+                    self._ws_responses_received = 0
                     await self._ws.send(json.dumps(json_data))
+                    self._ws_requests_sent += 1
                 chunk_idx = -1
                 request_id = -1
                 started = False
@@ -467,8 +474,12 @@ class AsyncClient:
                     if isinstance(chunk, str):
                         msg = json.loads(chunk)
                         if msg["type"] == "start":
-                            started = True
-                            request_id = msg["request_id"]
+                            self._ws_responses_received += 1
+                            if self._ws_responses_received == self._ws_requests_sent:
+                                started = True
+                                request_id = msg["request_id"]
+                            elif self._ws_responses_received > self._ws_requests_sent:
+                                raise Exception("Received more responses than requests")
                         elif msg["type"] == "end" and msg["request_id"] == request_id:
                             break
                         else:
