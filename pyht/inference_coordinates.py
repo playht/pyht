@@ -9,7 +9,7 @@ from typing import Callable, Awaitable, Optional, Dict, Any
 
 import aiohttp
 
-REQUIRED_MODELS = ["Play3.0-mini", "PlayDialog", "PlayDialogMultilingual"]
+REQUIRED_MODELS = ["Play3.0-mini", "PlayDialog", "PlayDialogMultilingual", "PlayDialogArabic"]
 REQUIRED_URLS = ["http_streaming_url", "websocket_url"]
 
 

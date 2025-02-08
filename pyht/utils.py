@@ -68,8 +68,9 @@ def get_voice_engine_and_protocol(voice_engine: Optional[str], protocol: Optiona
             voice_engine, protocol = _convert_deprecated_voice_engine(voice_engine, protocol)
 
     elif voice_engine in ["PlayDialog", "PlayDialog-http", "PlayDialog-ws", "PlayDialogMultilingual",
-                          "PlayDialogMultilingual-http", "PlayDialogMultilingual-ws"]:
-        if voice_engine in ["PlayDialog", "PlayDialogMultilingual"]:
+                          "PlayDialogMultilingual-http", "PlayDialogMultilingual-ws", "PlayDialogArabic",
+                          "PlayDialogArabic-http", "PlayDialogArabic-ws"]:
+        if voice_engine in ["PlayDialog", "PlayDialogMultilingual", "PlayDialogArabic"]:
             if not protocol:
                 logging.warning("No protocol specified; using http")
                 protocol = "http"
@@ -81,7 +82,7 @@ def get_voice_engine_and_protocol(voice_engine: Optional[str], protocol: Optiona
 
     else:
         raise ValueError(f"Invalid voice engine: {voice_engine} (must be Play3.0-mini, PlayDialog, \
-                         PlayDialogMultilingual, or PlayHT2.0-turbo).")
+                         PlayDialogMultilingual, PlayDialogArabic, or PlayHT2.0-turbo).")
 
     return voice_engine, protocol
 
@@ -145,6 +146,17 @@ def main():
     assert get_voice_engine_and_protocol("PlayDialogMultilingual-ws", "ws") == ("PlayDialogMultilingual", "ws")
     assert get_voice_engine_and_protocol("PlayDialogMultilingual-ws", None) == ("PlayDialogMultilingual", "ws")
     assert get_voice_engine_and_protocol("PlayDialogMultilingual-ws", "") == ("PlayDialogMultilingual", "ws")
+
+    assert get_voice_engine_and_protocol("PlayDialogArabic", "http") == ("PlayDialogArabic", "http")
+    assert get_voice_engine_and_protocol("PlayDialogArabic", "ws") == ("PlayDialogArabic", "ws")
+    assert get_voice_engine_and_protocol("PlayDialogArabic", None) == ("PlayDialogArabic", "http")
+    assert get_voice_engine_and_protocol("PlayDialogArabic", "") == ("PlayDialogArabic", "http")
+    assert get_voice_engine_and_protocol("PlayDialogArabic-http", "http") == ("PlayDialogArabic", "http")
+    assert get_voice_engine_and_protocol("PlayDialogArabic-http", None) == ("PlayDialogArabic", "http")
+    assert get_voice_engine_and_protocol("PlayDialogArabic-http", "") == ("PlayDialogArabic", "http")
+    assert get_voice_engine_and_protocol("PlayDialogArabic-ws", "ws") == ("PlayDialogArabic", "ws")
+    assert get_voice_engine_and_protocol("PlayDialogArabic-ws", None) == ("PlayDialogArabic", "ws")
+    assert get_voice_engine_and_protocol("PlayDialogArabic-ws", "") == ("PlayDialogArabic", "ws")
 
     assert get_voice_engine_and_protocol(None, "grpc") == ("PlayHT2.0-turbo", "grpc")
     assert get_voice_engine_and_protocol("", "grpc") == ("PlayHT2.0-turbo", "grpc")

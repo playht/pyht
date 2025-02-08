@@ -81,11 +81,12 @@ The `tts` method takes the following arguments:
 - `voice_engine`: The voice engine to use for the TTS request; a string (default `Play3.0-mini-http`).
     - `PlayDialog`: Our large, expressive English model, which also supports multi-turn two-speaker dialogues.
     - `PlayDialogMultilingual`: Our large, expressive multilingual model, which also supports multi-turn two-speaker dialogues.
+    - `PlayDialogArabic`: Our large, expressive Arabic model, which also supports multi-turn two-speaker dialogues.
     - `Play3.0-mini`: Our small, fast multilingual model.
     - `PlayHT2.0-turbo`: Our legacy English-only model
 - `protocol`: The protocol to use to communicate with the Play API (`http` by default except for `PlayHT2.0-turbo` which is `grpc` by default).
-    - `http`: Streaming and non-streaming audio over HTTP (supports `Play3.0-mini`, `PlayDialog`, and `PlayDialogMultilingual`).
-    - `ws`: Streaming audio over WebSockets (supports `Play3.0-mini`, `PlayDialog`, and `PlayDialogMultilingual`).
+    - `http`: Streaming and non-streaming audio over HTTP (supports `Play3.0-mini` and `PlayDialog*`).
+    - `ws`: Streaming audio over WebSockets (supports `Play3.0-mini` and `PlayDialog*`).
     - `grpc`: Streaming audio over gRPC (supports `PlayHT2.0-turbo` for all, and `Play3.0-mini` ONLY for Play On-Prem customers).
 - `streaming`: Whether or not to stream the audio in chunks (default True); non-streaming is only enabled for HTTP endpoints.
 
@@ -157,7 +158,7 @@ The `TTSOptions` class is used to specify the options for the TTS request. It ha
     - `UKRAINIAN`
     - `URDU`
     - `XHOSA`
-- The following options are additional inference-time hyperparameters which only apply to the `PlayDialog` and `PlayDialogMultilingual` models; if unset, the model will use default values chosen by Play.
+- The following options are additional inference-time hyperparameters which only apply to the `PlayDialog*` models; if unset, the model will use default values chosen by Play.
     - `voice_2` (multi-turn dialogue only): The second voice to use for a multi-turn TTS request; a string.
         - A URL pointing to a Play voice manifest file.
     - `turn_prefix` (multi-turn dialogue only): The prefix for the first speaker's turns in a multi-turn TTS request; a string.
