@@ -369,7 +369,7 @@ class AsyncClient:
         streaming: bool = True,
         context: Optional[AsyncContext] = None
     ) -> AsyncIterable[bytes]:
-        supported_voice_engines = ["Play3.0-mini", "PlayDialog", "PlayDialogMultilingual"]
+        supported_voice_engines = ["Play3.0-mini", "PlayDialog", "PlayDialogMultilingual", "PlayDialogArabic"]
         if voice_engine not in supported_voice_engines:
             raise ValueError(f"Only {supported_voice_engines} are supported in the HTTP API; got {voice_engine}")
 
@@ -436,7 +436,7 @@ class AsyncClient:
         metrics: Metrics,
         context: Optional[AsyncContext] = None
     ) -> AsyncIterable[bytes]:
-        supported_voice_engines = ["Play3.0-mini", "PlayDialog", "PlayDialogMultilingual"]
+        supported_voice_engines = ["Play3.0-mini", "PlayDialog", "PlayDialogMultilingual", "PlayDialogArabic"]
         if voice_engine not in supported_voice_engines:
             raise ValueError(f"Only {supported_voice_engines} are supported in the WebSocket API; got {voice_engine}")
 

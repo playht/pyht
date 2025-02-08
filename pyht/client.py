@@ -64,7 +64,7 @@ class HTTPFormat(Enum):
     FORMAT_PCM = "pcm"
 
 
-# PlayDialog and PlayDialogMultilingual only
+# PlayDialog* only
 class CandidateRankingMethod(Enum):
     # non-streaming only
     DescriptionASRWithMeanProbRank = "description_asr_with_mean_prob"
@@ -199,7 +199,7 @@ class TTSOptions:
     # only applies to Play3.0 and PlayDialogMultilingual
     language: Optional[Language] = None
 
-    # only apply to PlayDialog and PlayDialogMultilingual
+    # only apply to PlayDialog*
     # leave the _2 params None if generating single-speaker audio
     voice_2: Optional[str] = None
     turn_prefix: Optional[str] = None
@@ -293,7 +293,7 @@ def http_prepare_dict(text: List[str], options: TTSOptions, voice_engine: str) -
         "language": options.language.value if options.language is not None else None,
         "version": version,
 
-        # PlayDialog and PlayDialogMultilingual
+        # PlayDialog*
         # leave the _2 params None if generating single-speaker audio
         "voice_2": options.voice_2,
         "turn_prefix": options.turn_prefix,
@@ -640,7 +640,7 @@ class Client:
             metrics: Metrics,
             streaming: bool = True
     ) -> Iterable[bytes]:
-        supported_voice_engines = ["Play3.0-mini", "PlayDialog", "PlayDialogMultilingual"]
+        supported_voice_engines = ["Play3.0-mini", "PlayDialog", "PlayDialogMultilingual", "PlayDialogArabic"]
         if voice_engine not in supported_voice_engines:
             raise ValueError(f"Only {supported_voice_engines} are supported in the HTTP API; got {voice_engine}")
 
@@ -705,7 +705,7 @@ class Client:
             voice_engine: Optional[str],
             metrics: Metrics
     ) -> Iterable[bytes]:
-        supported_voice_engines = ["Play3.0-mini", "PlayDialog", "PlayDialogMultilingual"]
+        supported_voice_engines = ["Play3.0-mini", "PlayDialog", "PlayDialogMultilingual", "PlayDialogArabic"]
         if voice_engine not in supported_voice_engines:
             raise ValueError(f"Only {supported_voice_engines} are supported in the WebSocket API; got {voice_engine}")
 
