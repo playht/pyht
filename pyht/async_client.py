@@ -57,6 +57,7 @@ class AsyncClient:
         congestion_ctrl: CongestionCtrl = CongestionCtrl.OFF
         metrics_buffer_size: int = 1000
         remove_ssml_tags: bool = False
+        interruptible_ws: bool = False
 
         # gRPC (PlayHT2.0-turbo, Play3.0-mini-grpc)
         grpc_addr: Optional[str] = None
@@ -443,6 +444,11 @@ class AsyncClient:
         start = time.perf_counter()
         await self.ensure_inference_coordinates()
 
+        if self._advanced.interruptible_ws:
+            query_params = "&_ws_mode=interrupt"
+        else:
+            query_params = ""
+
         text = prepare_text(text, self._advanced.remove_ssml_tags)
         assert self._inference_coordinates is not None, "No connection"
         metrics.append("text", str(text)).append("endpoint",
@@ -452,7 +458,7 @@ class AsyncClient:
         for attempt in range(1, self._max_attempts + 1):
             try:
                 assert self._inference_coordinates is not None, "No connection"
-                ws_address = self._inference_coordinates[voice_engine]["websocket_url"]
+                ws_address = self._inference_coordinates[voice_engine]["websocket_url"] + query_params
                 if self._ws is None:
                     self._ws = await connect(ws_address)
                     self._ws_requests_sent = 0
