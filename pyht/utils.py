@@ -46,6 +46,11 @@ def get_voice_engine_and_protocol(voice_engine: Optional[str], protocol: Optiona
         else:
             raise ValueError(f"No voice engine specified and invalid protocol {protocol} (must be http, ws, or grpc).")
 
+    elif voice_engine == "PlayDialog-turbo":
+        if protocol != "http":
+            raise ValueError("PlayDialog-turbo only supports HTTP protocol")
+        return "PlayDialog-turbo", protocol
+
     elif voice_engine == "PlayHT2.0-turbo":
         if not protocol:
             protocol = "grpc"

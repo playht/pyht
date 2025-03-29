@@ -265,7 +265,7 @@ def output_format_to_mime_type(format: Format) -> str:
         return "audio/mpeg"  # mp3 by default
 
 
-def http_prepare_dict(text: List[str], options: TTSOptions, voice_engine: str) -> Dict[str, Any]:
+def http_prepare_dict(text: Union[str, List[str]], options: TTSOptions, voice_engine: str) -> Dict[str, Any]:
     if voice_engine.startswith("Play3.0"):
         version = "v3"
     elif voice_engine.startswith("PlayHT2.0"):
@@ -538,7 +538,11 @@ class Client:
         try:
             voice_engine, protocol = get_voice_engine_and_protocol(voice_engine, protocol)
 
-            if protocol == "http":
+            if voice_engine == "PlayDialog-turbo":
+                if not streaming:
+                    raise ValueError("Non-streaming is not supported for PlayDialog-turbo")
+                return self._tts_turbo_http(text, options, voice_engine, metrics)
+            elif protocol == "http":
                 return self._tts_http(text, options, voice_engine, metrics, streaming)
             elif protocol == "ws":
                 if not streaming:
@@ -773,6 +777,69 @@ class Client:
                     # In case it was an expired token, refresh it
                     self.ensure_inference_coordinates(force=True)
                     continue
+                metrics.finish_error(str(e))
+                raise
+
+    def _tts_turbo_http(
+            self,
+            text: Union[str, List[str]],
+            options: TTSOptions,
+            voice_engine: Optional[str],
+            metrics: Metrics,
+    ) -> Iterable[bytes]:
+        supported_voice_engines = ["PlayDialog-turbo"]
+        if voice_engine not in supported_voice_engines:
+            raise ValueError(f"Only {supported_voice_engines} are supported in the Turbo HTTP API; got {voice_engine}")
+
+        if type(text) == list and len(text) > 1:
+            raise ValueError("PlayDialog-turbo only supports single-line text")
+
+        start = time.perf_counter()
+
+        url = "https://api.play.ht/api/v2/tts/stream"
+
+        text = prepare_text(text, self._advanced.remove_ssml_tags)
+        text = text[0]
+        metrics.append("text", str(text)).append("endpoint", str(url))
+
+        for attempt in range(1, self._max_attempts + 1):
+            try:
+                response = requests.post(
+                        url,
+                        headers={
+                            "x-user-id": self._user_id,
+                            "authorization": f"Bearer {self._api_key}",
+                            "accept": output_format_to_mime_type(options.format),
+                        },
+                        json=http_prepare_dict(text, options, voice_engine),
+                        stream=True
+                    )
+                if response.status_code != 200:
+                    raise Exception(f"HTTP {response.status_code}: {response.text}", response.status_code)
+                chunk_idx = -1
+                for chunk in response.iter_content(chunk_size=None):
+                    chunk_idx += 1
+                    if chunk_idx == _audio_begins_at(options.format):
+                        metrics.set_timer("time-to-first-audio", time.perf_counter() - start)
+                    yield chunk
+                metrics.finish_ok()
+                break
+            except Exception as e:
+                logging.debug(f"Error: {e}")
+                if e.args[1] not in {429, 503}:  # HTTP equivalent to gRPC RESOURCE_EXHAUSTED, UNAVAILABLE
+                    metrics.finish_error(str(e))
+                    raise
+
+                if attempt < self._max_attempts:
+                    # It's poor customer experience to show internal details about retries, so we only debug log here.
+                    logging.debug(f"Retrying in {self._backoff*1000} ms ({attempt} attempts so far); ({e.args[1]})")
+                    metrics.inc("retry").append("retry.reason", str(e.args[1]))
+                    metrics.start_timer("retry-backoff")
+                    if self._backoff > 0:
+                        time.sleep(self._backoff)
+                    metrics.finish_timer("retry-backoff")
+                    continue
+
                 metrics.finish_error(str(e))
                 raise
 
