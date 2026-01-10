@@ -34,7 +34,7 @@ python = "^3.8"
 grpcio = "^1.70.0"
 filelock = "^3.12.4"
 protobuf = "^5.29.3"
-requests = "^2.31.0"
+requests = "^2.32.4"
 aiohttp = "^3.10.11"
 websockets = "^13.1"
 
