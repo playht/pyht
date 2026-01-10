@@ -336,6 +336,7 @@ class Client:
         congestion_ctrl: CongestionCtrl = CongestionCtrl.OFF
         metrics_buffer_size: int = 1000
         remove_ssml_tags: bool = False
+        interruptible_ws: bool = False
 
         # gRPC (PlayHT2.0-turbo and Play3.0-mini-grpc)
         grpc_addr: Optional[str] = None
@@ -716,6 +717,11 @@ class Client:
         start = time.perf_counter()
         self.ensure_inference_coordinates()
 
+        if self._advanced.interruptible_ws:
+            query_params = "&_ws_mode=interrupt"
+        else:
+            query_params = ""
+
         text = prepare_text(text, self._advanced.remove_ssml_tags)
         assert self._inference_coordinates is not None, "No connection"
         metrics.append("text", str(text)).append("endpoint",
@@ -725,7 +731,7 @@ class Client:
         for attempt in range(1, self._max_attempts + 1):
             try:
                 assert self._inference_coordinates is not None, "No connection"
-                ws_address = self._inference_coordinates[voice_engine]["websocket_url"]
+                ws_address = self._inference_coordinates[voice_engine]["websocket_url"] + query_params
                 if self._ws is None:
                     self._ws = connect(ws_address)
                     self._ws_requests_sent = 0
@@ -753,7 +759,7 @@ class Client:
                                 request_id = msg["request_id"]
                             elif self._ws_responses_received > self._ws_requests_sent:
                                 raise Exception("Received more responses than requests")
-                        elif msg["type"] == "end" and msg["request_id"] == request_id:
+                        elif (msg["type"] == "end" or msg["type"] == "interrupt") and msg["request_id"] == request_id:
                             break
                         else:
                             continue

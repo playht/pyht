@@ -43,12 +43,15 @@ def main(
 
     # Get the streams
     if use_http:
-        voice_engine = "Play3.0-mini-http"
+        voice_engine = "Play3.0-mini"
+        protocol = "http"
     elif use_ws:
-        voice_engine = "Play3.0-mini-ws"
+        voice_engine = "Play3.0-mini"
+        protocol = "ws"
     else:
-        voice_engine = "PlayHT2.0"
-    in_stream, out_stream = client.get_stream_pair(options, voice_engine=voice_engine)
+        voice_engine = "PlayHT2.0-turbo"
+        protocol = "grpc"
+    in_stream, out_stream = client.get_stream_pair(options, voice_engine=voice_engine, protocol=protocol)
 
     # Start a player thread.
     audio_thread = threading.Thread(None, save_audio, args=(out_stream,))
@@ -115,12 +118,15 @@ async def async_main(
 
     # Get the streams
     if use_http:
-        voice_engine = "Play3.0-mini-http"
+        voice_engine = "Play3.0-mini"
+        protocol = "http"
     elif use_ws:
-        voice_engine = "Play3.0-mini-ws"
+        voice_engine = "Play3.0-mini"
+        protocol = "ws"
     else:
         voice_engine = "PlayHT2.0-turbo"
-    in_stream, out_stream = client.get_stream_pair(options, voice_engine=voice_engine)
+        protocol = "grpc"
+    in_stream, out_stream = client.get_stream_pair(options, voice_engine=voice_engine, protocol=protocol)
 
     audio_task = asyncio.create_task(async_save_audio(out_stream))
 
