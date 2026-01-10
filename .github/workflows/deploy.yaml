@@ -17,7 +17,7 @@ jobs:
           pypi_token: ${{ secrets.PYPI_TOKEN }}
           poetry_install_options: "--without dev"
           plugins: "poetry-dynamic-versioning"
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: dist
